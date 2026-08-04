@@ -182,7 +182,18 @@ Stun (524 / 589), Petrification (524 / 564), Sleep (458 / 564), Silence (503 / 5
 four values: Damage Boost, Bonus Damage, Damage Resistance, Damage Reduction. Example: Humanoid
 101.4 / 10 / 66 / 8; Demon 101.4 / 10 / 66 / 32.
 
-Tabs 4–7 not yet captured.
+**Tab 4 — Directional.** Front / Side / Back variants of Hit Chance, Critical Hit, Heavy Attack
+Chance and Bonus Damage on the left; Evasion, Endurance, Heavy Attack Evasion and Damage
+Reduction on the right. Observed almost entirely zero, with three exceptions: Back Hit Chance
+**−15.4**, Front Critical Hit Chance 6, Front Heavy Attack Chance 5.4, Side Heavy Attack Chance
+7, Front Endurance 185.
+
+Two things matter here. **Directional stats can be negative** — the hat tooltip carried a
+`Back Hit Chance −21` PvP modifier, and it shows up in the aggregate. And a panel of mostly
+zeros is not noise, it is **untapped headroom**: this is an advanced optimisation axis the
+player has not engaged with, which is worth knowing before recommending it as a priority.
+
+Tabs 5–7 not yet captured.
 
 **Species pairs with the boss timer.** Monsters and bosses belong to these species, so knowing
 which species the next world boss is turns a generic suggestion into a timed, specific one —
