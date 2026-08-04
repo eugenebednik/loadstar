@@ -453,6 +453,55 @@ This is the proof of the two-component model, and it is **directly usable**: the
 quantify exactly what a stat is delivering right now, rather than inferring it. Capture the
 expanded view, not the collapsed one.
 
+Captured expansions:
+
+| Stat | Value | Continuous contribution |
+| --- | --- | --- |
+| Strength | 40 | Main Min/Max Damage +24 · Max Health 2,100 · Health Regen 127 · Melee Defense 150 · Ranged Defense 150 |
+| Perception | 80 | Main Min/Max Damage +56 · Melee/Ranged/Magic Hit Chance 740 · all eight CC Chances 500 · Buff Duration +43% |
+| Fortitude | 71 | Main Min/Max Damage +49 · Magic Defense 505 · Melee/Ranged/Magic Endurance 585 · all eight CC Resistances 405 |
+| Dexterity | 80 | Main **Max** Damage +95 · Attack Speed +21% · Melee/Ranged/Magic Evasion 280 · Melee/Ranged/Magic Critical Hit Chance 740 |
+
+| Wisdom | 96 | Main **Max** Damage +117 · Max Mana 6,420 · Mana Regen 732 · Cooldown Speed +29.5% |
+
+All five expansions captured.
+
+**Damage contribution falls into two families, not one curve and not five.** The first pass
+looked like a single formula, then Dexterity broke it; with all five captured the actual
+structure is clear:
+
+| Family | Stats | Per point above 10 | Applies to |
+| --- | --- | --- | --- |
+| Balanced | Strength, Perception, Fortitude | **×0.8** | **both** Min and Max Damage |
+| Max-only | Dexterity, Wisdom | **×≈1.36** | Max Damage only |
+
+Every observation fits: Strength 40 → 24, Fortitude 71 → 49, Perception 80 → 56; Dexterity
+80 → 95, Wisdom 96 → 117.
+
+So the max-only stats buy roughly **1.7× more Max Damage per point** but contribute no Min
+Damage — they raise the ceiling and widen the damage range, while the balanced stats lift the
+whole band. That is a real build-shaping trade-off (burst and variance versus consistency), and
+it is invisible from the breakpoint tables alone.
+
+**Verify before relying on the constants.** Five points across two families is a good fit, not a
+proof, and 1.36 is an estimate from two samples. The *family split* is solid — it is stated
+outright in the tooltips. The multipliers are inference.
+
+**The tooltip's one-line descriptor predicts this exactly**, and is worth parsing rather than
+skipping:
+
+| Stat | Descriptor says | Damage effect |
+| --- | --- | --- |
+| Strength | "Max Damage, and Min Damage" | both |
+| Perception | "Max Damage and Min Damage" | both |
+| Fortitude | "Max Damage, and Min Damage" | both |
+| Dexterity | "Evasion and **Max Damage**" | max only |
+| Wisdom | "cooldown abilities and **Max Damage**" | max only (predicted, unconfirmed) |
+
+So the descriptor tells you *which* stats a point feeds, and the expanded view tells you *how
+much*. Both are needed; neither substitutes for the other, and no formula substitutes for
+either.
+
 ### Escalating point cost — this inverts naive "distance to next tier" advice
 
 **Raising a stat gets more expensive as it climbs.** Once a stat's **base** value reaches 30 —
