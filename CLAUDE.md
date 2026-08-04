@@ -91,6 +91,39 @@ this is a **user-initiated capture**: the player hovers the gear score and press
 hotkey. Treat it like the named-currency reference — prompt for it on first run, and again
 periodically, because the numbers move as gear changes.
 
+## Equipment Level (watermark) — the average rule, and why it inverts advice
+
+Hovering the watermark gives its definition verbatim:
+
+> This level serves as the standard for the level of equipment obtained in the future. It is
+> determined by the average of the highest levels of each type of equipment you have obtained:
+> weapons, armor, and accessories.
+
+Observed 2026-08-03 — **Equipment Lv. 73**, from Max Weapon **73**, Max Armor **74**, Max
+Accessory **73**. That is `(73 + 74 + 73) / 3 = 73.33`, floored to 73.
+
+Three consequences, and they matter because they invert what looks obvious:
+
+1. **It is an average of three category maxima, not a single number.** The watermark rises only
+   when the *average* crosses the next integer, which in practice means the **lagging**
+   categories have to come up.
+2. **Upgrading your strongest category is wasted for watermark purposes.** On this character
+   Armor is already at 74 while Weapon and Accessory sit at 73. Another Armor upgrade moves the
+   watermark by nothing. Only Weapon or Accessory does.
+3. **Only the single highest item ever obtained in each category counts** — not the average of
+   what's equipped, and not what's currently worn. An item obtained and then replaced still
+   counts.
+
+This directly contradicts the naive reading of the Combat Power tooltip. There, Armor showed a
+large headroom (439) and looks like a priority. For raising the *watermark*, Armor is the one
+category that cannot help. Good advice reconciles the two rather than quoting whichever it saw
+first: use Combat Power headroom for raw power, and the watermark average for what improves
+every future drop.
+
+Because the watermark floors future gear, moving it is often worth more than a single larger
+upgrade elsewhere — advice that ignores it will systematically undervalue lagging-category
+upgrades.
+
 So **do not ask the vision model to name items from icons.** It will produce plausible names
 that are wrong, and wrong item names produce confidently wrong spending advice.
 
