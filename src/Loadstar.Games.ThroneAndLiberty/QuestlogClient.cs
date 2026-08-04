@@ -62,16 +62,22 @@ public sealed partial class QuestlogClient
     }
 
     /// <summary>
-    /// Fetches a build. Note the input shape: both <c>slug</c> and <c>url</c> take the same
-    /// build slug. Passing the author's profile id in <c>slug</c> returns NOT_FOUND — a trap
-    /// worth keeping in a comment, because the field name suggests otherwise.
+    /// Fetches a character and its loadouts.
+    ///
+    /// <para><c>slug</c> is the only parameter, and it is the last path segment of a build URL.
+    /// Both URL forms occur — <c>/character-builder/{userSlug}/{buildSlug}</c> and
+    /// <c>/character-builder/{buildSlug}</c> — so taking the last segment is correct for both.</para>
+    ///
+    /// <para>The response shape is the trap: <c>builds</c> is a SIBLING of <c>character</c>, not
+    /// a field inside it. Reading <c>character</c> and expecting gear there returns nothing and
+    /// fails silently.</para>
     /// </summary>
-    public async Task<TargetBuild?> GetBuildAsync(string urlOrSlug, CancellationToken cancellationToken)
+    public async Task<CharacterBuilds?> GetCharacterAsync(string urlOrSlug, CancellationToken cancellationToken)
     {
         var slug = ExtractSlug(urlOrSlug)
             ?? throw new ArgumentException($"Not a recognisable questlog build URL or slug: '{urlOrSlug}'", nameof(urlOrSlug));
 
-        var input = JsonSerializer.Serialize(new { slug, url = slug });
+        var input = JsonSerializer.Serialize(new { slug });
         var requestUri = $"{Base}characterBuilder.getCharacter?input={Uri.EscapeDataString(input)}";
 
         using var response = await _http.GetAsync(requestUri, cancellationToken).ConfigureAwait(false);
@@ -99,7 +105,30 @@ public sealed partial class QuestlogClient
             return null;
         }
 
-        return BuildMapper.Map(character, slug);
+        // `builds` sits alongside `character`, NOT inside it. A character holds several
+        // loadouts (six on the reference build), each with its own equipment, target
+        // attributes and weapon pair — so the caller has to pick one rather than assume.
+        var builds = new List<TargetBuild>();
+
+        if (data.TryGetProperty("builds", out var buildArray) &&
+            buildArray.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var build in buildArray.EnumerateArray())
+            {
+                builds.Add(BuildMapper.Map(build, slug));
+            }
+        }
+
+        return new CharacterBuilds
+        {
+            Slug = slug,
+            Name = character.TryGetProperty("name", out var n) ? n.GetString() ?? slug : slug,
+            Level = character.TryGetProperty("level", out var l) && l.TryGetInt32(out var lv) ? lv : null,
+            Tags = character.TryGetProperty("tags", out var t) && t.ValueKind == JsonValueKind.Array
+                ? t.EnumerateArray().Select(x => x.GetString() ?? string.Empty).Where(x => x.Length > 0).ToArray()
+                : [],
+            Builds = builds,
+        };
     }
 
     [GeneratedRegex("^[A-Za-z0-9_-]{4,64}$")]

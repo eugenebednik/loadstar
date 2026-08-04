@@ -674,8 +674,65 @@ patch changes the rotation.
 Public tRPC, undocumented, unversioned. Base
 `https://questlog.gg/throne-and-liberty/api/trpc/`.
 
-`characterBuilder.getCharacter?input={"slug":"<build-slug>","url":"<build-slug>"}` — **both
-fields take the same build slug**, which is the *last* path segment of a build URL. Passing the
-author's profile slug returns `NOT_FOUND`. The field name is a trap.
+`characterBuilder.getCharacter?input={"slug":"<build-slug>"}` — **`slug` is the only parameter**,
+and it is the *last* path segment of a build URL. An earlier note here claimed `url` was also
+required; that was wrong — `url` is not a parameter, and passing it is simply ignored.
+
+**The response shape is the part that bites.** `builds` is a **sibling of `character`**, not a
+field inside it:
+
+```jsonc
+{ "character": { ...metadata... },   // name, level, tags, desc, folders — NO equipment
+  "builds":    [ { ... } ],          // the actual loadouts
+  "folders":   [ { ... } ],          // organisational only: id, name, note, color, order
+  "status":    "..." }
+```
+
+Reading `character` and expecting gear there returns nothing, silently. Equipment lives in
+`builds[]`.
+
+**A character holds multiple builds.** The reference build below has **six**. Each entry carries:
+
+```
+{ id, name, userId, note, characterId, attributes, equipment, order, weaponTypes, folderId, tags }
+```
+
+So an importer must let the user **choose which loadout** rather than assuming one — and
+`attributes` on each build is the **target stat spread**, which is exactly what pairs with the
+breakpoint and cost-escalation work above.
+
+Per-slot equipment shape (real sample):
+
+```jsonc
+"belt": {
+  "id": "belt_aa_S1_003", "perk": null,
+  "runes": { "0": { "lvl": 120, "runeId": "Belt_Ast_Rune_Usable_kAA2_001", "statId": "skill_power_resistance" }, … },
+  "heroic": { "1": "hp_max", "2": "cost_max", "3": "all_armor" },
+  "traits": { "hp_max": 600, "skill_power_resistance": 800, "debuff_taken_duration_modifier": -600 },
+  "potential": "range_armor", "resonance": "hp_max"
+}
+```
+
+Note traits can be **negative** (`debuff_taken_duration_modifier: -600`).
+
+### Reference catalogues — the icon-identification index
+
+The builder page also loads language-parameterised catalogues, which are the local index that
+solves the icon-naming problem:
+
+`getEquipmentItems?input={"language":"en"}` · `getEquipmentItemSets` · `getEquipmentRunes` ·
+`getRuneSynergies` · `getAttributeStats` · `getPreviewEquipmentItems` ·
+`getTraitRecommendations?input={"mainHandType":"wand","offHandType":"bow"}`
+
+Cache these once; they are static per patch.
+
+### The user's target build
+
+**"Seeker PVE Healer"** — `InfernalRavenousUnderTheSalvation`, level 60, tags `pve` + `healer`,
+**Wand + Bow**, six loadouts, last updated 2026-08-02.
+
+A healer build reframes the stat work above: Wisdom (Max Mana, Mana Regen, Cooldown Speed) and
+Perception (Buff Duration, CC) matter more than raw damage, and the Max Damage families are
+largely beside the point. Do not apply DPS reasoning to it.
 
 Cache hard, request rarely, always keep the manual-JSON-paste fallback working.
