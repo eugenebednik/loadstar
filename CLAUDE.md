@@ -390,11 +390,98 @@ cooldown abilities and Max Damage."* Sources at 96: Base 30 / Equipment 65 / Ste
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Max Mana 750 | Debuff Duration −5% | Cooldown Speed 5% | Max Mana 900 | Max Mana 450 · Mana Regen 120 | Max Mana 450 · Cooldown Speed 3% | Max Mana 600 · Mana Cost Efficiency 3% | Max Mana 600 · Max Damage 10 |
 
-Perception and Fortitude not yet captured.
+**Perception** — *"source of insight and awareness; heightens awareness during battle, increases
+the accuracy of attacks, CC effects, the duration of Buffs, and Max Damage and Min Damage."*
+Sources at 80: Base 29 / Equipment 50 / Stellar Journey 1.
 
-**Cheapest available tier on the observed character:** Wisdom 96 → 100, four points, granting
-Max Mana 600 and Mana Cost Efficiency 3%. Dexterity's next tier is twenty points away by
-comparison.
+| 30 | 40 | 50 | 60 | 70 | 80 | 100 | 120 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Hit Chance 100 | Buff Duration 5% | Range 7.5% | Hit Chance 120 | Hit Chance 60 · CC Chance 100 | Hit Chance 60 · Buff Duration 3% | Hit Chance 60 · Range 5% | Hit Chance 60 · CC Chance 100 |
+
+**Fortitude** — *"the most fundamental status that affects Endurance, CC Resistances, Magic
+Defense, Max Damage, and Min Damage."* Sources at 71: Base **10** / Equipment 60 / Stellar
+Journey 1.
+
+| 30 | 40 | 50 | 60 | 70 | 80 | 100 | 120 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Endurance 100 | Magic Defense 200 | Heavy Attack Evasion 100 | Endurance 120 | Endurance 60 · CC Resistances 100 | Endurance 60 · Heavy Attack Evasion 60 | Endurance 60 · Critical Damage Resistance 4% | Endurance 60 · Heavy Attack Damage Resistance 5% |
+
+Expanded contribution at 71: Main Min/Max Damage **+49** each, Magic Defense **505**,
+Melee/Ranged/Magic Endurance **585** each, and all eight CC Resistances at **405**.
+
+All five stats captured.
+
+### Base values decide cost, and they differ sharply
+
+The source breakdown is the most important number on each tooltip, because the 2× escalation
+triggers on **base**, not the displayed total:
+
+| Stat | Displayed | Base | Equipment | Cost band |
+| --- | --- | --- | --- | --- |
+| Strength | 40 | 16 | 23 | 1× — 14 points before escalation |
+| Dexterity | 80 | 24 | 55 | 1× — 6 points before escalation |
+| Wisdom | 96 | **30** | 65 | **2× already** |
+| Perception | 80 | 29 | 50 | 1× — 1 point before escalation |
+| Fortitude | 71 | **10** | 60 | **1× — 20 points before escalation** |
+
+**Fortitude is the cheapest stat on this character by a wide margin**, and nothing about the
+displayed value (71, the lowest) reveals why — it is cheap because its base is 10 while
+everything else has been pushed to the escalation threshold. Its equipment contribution of 60 is
+doing the heavy lifting.
+
+Reworking the earlier comparison with real costs:
+
+- **Fortitude 71 → 80**: 9 points at 1× = **9 stat points**, for Endurance 60 + Heavy Attack
+  Evasion 60.
+- **Wisdom 96 → 100**: 4 points at 2× = **8 stat points**, for Max Mana 600 + Mana Cost
+  Efficiency 3%.
+
+Comparable cost, and both are far better than Dexterity or Perception, which need ~20 levels to
+reach their next tier. That ranking is invisible if you look only at displayed values or only at
+distance-to-threshold — which is exactly why the advice engine must read the base breakdown.
+
+### `Alt` → View More exposes the continuous contribution
+
+Holding `Alt` on a stat tooltip expands it to show what the stat currently contributes through
+continuous scaling — separate from the discrete tiers. Perception at 80:
+
+Main Min Damage **+56**, Main Max Damage **+56**, Melee/Ranged/Magic Hit Chance **740** each,
+Weaken/Stun/Petrification/Sleep/Silence/Bind/Fear/Collision Chance **500** each, Buff Duration
+**+43%**.
+
+This is the proof of the two-component model, and it is **directly usable**: the tool can
+quantify exactly what a stat is delivering right now, rather than inferring it. Capture the
+expanded view, not the collapsed one.
+
+### Escalating point cost — this inverts naive "distance to next tier" advice
+
+**Raising a stat gets more expensive as it climbs.** Once a stat's **base** value reaches 30 —
+base only, equipment contributions excluded — each further point costs **2 stat points** instead
+of 1. Reports indicate a further escalation to **4** at a higher threshold; the exact
+trigger is **not yet verified** and must be confirmed in-game before the tool relies on it.
+
+This changes the arithmetic completely, and it is why raw distance-to-tier is the wrong metric:
+
+| Stat | Value | Base | Distance to next tier | Actual cost at 2× |
+| --- | --- | --- | --- | --- |
+| Wisdom | 96 | **30** | 4 | **~8 points** |
+| Perception | 80 | 29 | 20 | ~40 points |
+| Dexterity | 80 | 24 | 20 | ~40 points |
+| Strength | 40 | 16 | 10 | ~10–20 points |
+
+Every base value on the observed character sits at or near the 30 threshold, so **most further
+investment is already in the doubled band**.
+
+Corrections this forces on the advice engine:
+
+- **Cost must be computed from the base component, not the displayed total.** The tooltip's
+  source breakdown (Base / Equipment / Stellar Journey) is what makes this possible — a stat
+  showing 96 with base 30 is in the expensive band, while one showing 96 with base 12 is not.
+- **Rank by bonus-per-stat-point-spent, not by distance to the threshold.** My earlier framing —
+  "Wisdom 96 is four points from 100, the cheapest tier on the sheet" — was wrong: it is
+  roughly eight stat points, and the comparison against other stats shifts accordingly.
+- **Equipment-sourced stat points bypass the escalation entirely**, which makes gear that
+  grants a lagging stat disproportionately valuable versus spending points on it.
 - Combine with redistribution: crossing a threshold costs only reallocation, which still makes
   it among the highest-confidence recommendations available.
 
