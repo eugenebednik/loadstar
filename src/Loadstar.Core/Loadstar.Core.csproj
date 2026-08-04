@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Loadstar.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Anthropic ships an official C# SDK, so Claude goes through it. OpenAI is
+         raw HTTP behind the same IAiProvider interface. -->
+    <PackageReference Include="Anthropic" Version="12.9.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+  </ItemGroup>
+
+</Project>

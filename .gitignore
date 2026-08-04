@@ -1,0 +1,17 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+
+artifacts/
+publish/
+installer/Output/
+
+# Credentials are DPAPI-encrypted and per-machine — never committed.
+credentials.bin
+settings.local.json
+
+# Captures may contain other players' names. Never committed.
+captures/
+*.capture.png
