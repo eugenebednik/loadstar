@@ -3,7 +3,36 @@
 A self-contained feature: no capture, no AI, no overlay. It shares nothing with the advice
 engine, which is why it can be built in parallel.
 
-## Why it's local data, not a scraper
+## There is no official API — and the game is the best source
+
+Confirmed 2026-08-04. **Amazon has not activated a spawn API**, and third-party timer developers
+are openly waiting on it. GamesLantern's timer covers **Korean servers only** (NCSoft's version),
+not Amazon's global release. This is why questlog's regional coverage is uneven and why no
+external timer reliably covers EU — the underlying data source does not exist.
+
+So local computation is not a workaround around a missing integration. It is the only approach
+available to anyone, and every competing tool is in the same position.
+
+**The strongest source is the player's own client.** Opening the large in-game map lists the
+day's bosses and their spawn times down the left side of the screen. That is:
+
+- **per-server accurate by definition** — it is that player's server, not a regional guess
+- **available for every region**, including the ones no external timer covers
+- **already within Loadstar's capabilities** — it is a screen capture, the thing this app does
+
+That reframes the feature. Rather than shipping a schedule table and hoping it matches the
+player's server, **prompt the player to open the map once and capture it**, then compute
+everything from their own data. The bundled JSON becomes a fallback and a sanity check, not the
+source of truth.
+
+It also fits the existing pattern exactly: the same user-initiated capture already used for the
+named-currency reference and the Combat Power tooltip. Same hotkey, same consent model, same
+constraint that Loadstar cannot open the map itself because that would be input.
+
+Worth confirming the map screen is text-labelled before committing to this — the currency bar
+and inventory were not, and that assumption has burned this project once already.
+
+## Why the bundled table is local data, not a scraper
 
 The obvious design — poll a timer site — is wrong. questlog's event calendar renders a **fixed
 weekly grid**: a region selector, a UTC offset, and the same daily slots repeating. thronewatch
