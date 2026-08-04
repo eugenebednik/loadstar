@@ -282,6 +282,89 @@ The cost is that tooltips need hovering, which is input, so they are user-initia
 Thirteen slots is too many to ask for routinely — so: local icon matching for bulk inventory,
 tooltip captures for the handful of slots actually under consideration.
 
+## Base stats are redistributable — the cheapest alignment action there is
+
+The five base stats — **Strength, Dexterity, Wisdom, Perception, Fortitude** (observed 40 / 80 /
+96 / 80 / 71) — are not fixed. The **total pool is accumulated from gear**, and the
+**"Stat Change"** button at the bottom-left of the character panel redistributes that pool
+freely across the five.
+
+This changes the priority ordering more than anything else on this page. Every other
+recommendation the tool makes costs something — Sollant, tokens, materials, time, or real money.
+**Redistributing stats costs none of those.** If the imported questlog build specifies a stat
+spread and the player's current spread differs, that is a zero-cost correction available right
+now, and it should be surfaced *before* any upgrade that costs resources.
+
+Practical rules for the advice engine:
+
+- **Check the stat spread against the target build first**, every session. It is the highest
+  return-on-effort action available and it is trivially reversible.
+- **Never treat a stat spread as a sunk constraint.** Advice like "your Strength is low, so pick
+  a Strength-scaling item" is wrong — the spread is an output the player controls, not an input
+  they're stuck with.
+- The pool grows as gear improves, so **new gear implies a re-check**, not just a new item.
+- Confirm whether redistribution carries a cost or cooldown in 4.5.0 before promising it is free
+  — the mechanic is confirmed, the price is not.
+
+Stat Points shown as `0` on the panel are *unspent* points, distinct from this redistribution.
+
+## Buff systems — Amitoi, morphs, food
+
+Stacking these is a major progression axis, and it is largely invisible in gear-focused advice.
+Treat it as first-class.
+
+### Amitoi — and where tab 7's numbers come from
+
+Amitoi are collectible companions that follow the player, pick up loot, heal, and flag
+Mystic Globe / Portal locations. The progression-relevant part is that **collecting the right
+combinations grants permanent stat bonuses** — from raw Amitoi count and from **Pal Synergy**.
+
+There are **38 Pal Synergies**, and their caps line up exactly with tab 7:
+
+| Pal Synergy bonus | Per synergy | Cap |
+| --- | --- | --- |
+| Sollant Bonus | +0.3% – +1% | **9.1%** |
+| EXP Bonus | +0.5% – +1.5% | **13%** |
+| Mastery Bonus | +0.3% – +1% | **7%** |
+| Item Chance | +0.5% – +1.5% | **8%** |
+
+**This is the missing explanation for the Miscellaneous tab.** The observed character sits at
+EXP Bonus **+10% of a possible 13%** and Item Chance **+3% of a possible 8%** — so Amitoi
+collection is a concrete, quantifiable gap with a known ceiling, not a vague "collect more pets"
+suggestion. Advice can say exactly how much economy throughput is being left on the table.
+
+`Amitoi Healing +637.28%` on tab 1 is a separate Amitoi-driven stat.
+
+### Morphs
+
+Transformations used for travel — **Glide, Aquatic and Dash** for air, water and land. They
+**level up**, granting additional traits and boosts, so they are a progression track rather than
+pure convenience. Lower priority than gear or Amitoi, but not zero.
+
+### Food and cooking — the stacking rule that matters
+
+Four categories:
+
+- **Attack** — PvP hit, all hit, heal damage boost, bonus damage, skill damage boost
+- **Defense** — all endurance, all evasion, heavy attack
+- **Utility** — max health, health recovery, health regen, mana regen
+- **Miscellaneous** — currency generation, fishing mastery, EXP bonus
+
+**The rule: two combat buffs can be stacked, but Attack and Defense cannot be stacked together.**
+Valid pairs are Attack + Utility, or Defense + Utility. An advice engine that says "eat your
+attack food and your defense food before the boss" is recommending something the game will not
+let the player do, and that single error would undermine trust in everything else it says.
+
+**Food quality matters** — better ingredients raise the chance of higher-quality results, which
+give longer durations and larger stat values. So the cooking input is itself an optimisation
+target, not just the output.
+
+> **Currency warning.** The food-stacking specifics above come from guides predating the 4.0.0
+> item revamp. The Amitoi Pal Synergy caps corroborate against live tab 7 values and are
+> trustworthy; **the Attack/Defense stacking restriction has not been verified against 4.5.0**
+> and should be confirmed in-game before the advice engine relies on it. Flagged rather than
+> quietly assumed.
+
 ## Currencies — left to right along the top bar
 
 Authoritative; supplied by a player of the account, then cross-checked. **Only two of these
