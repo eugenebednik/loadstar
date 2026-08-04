@@ -141,6 +141,41 @@ Two mechanisms replace guessing:
 The model's job is reading **numbers and layout**, which it is reliable at. Identification is
 ours.
 
+## Expanded character info — the definitive stat sheet
+
+The expanded view of the character window is **fully text-labelled** and is the authoritative
+read on where the character actually stands. Three columns plus a tabbed right-hand panel,
+observed 2026-08-03:
+
+- **Weapons** — Base Damage 295~636, Attack Speed 0.312s, Range 30m
+- **Defense** — Melee 3,370, Magic 3,957, Ranged 3,163
+- **Attack** — hit chance, critical hit chance and heavy attack chance across melee/ranged/magic,
+  plus Skill Damage Boost 202 and Bonus Damage 48
+- **Protection** — evasion, endurance and heavy attack evasion across all three, plus Skill
+  Damage Resistance 771 and Damage Reduction 36
+- **Right panel** (eight category tabs) — Max Health 36,009, Max Mana 16,692, Max Stamina 100,
+  regen values, Mana Cost Efficiency +48.8%, Cooldown Speed +120%, Movement Speed 745, Attack
+  Speed +59.96%, Healing +205.61%, Shield Health +107.4%, Amitoi Healing +637.28%, Potion
+  Healing +127%, Range +65.1%, and more
+
+**This is what a questlog target build's stat goals compare against**, so it is the natural
+partner to the build import: the build states the target, this screen states the actual.
+
+Two capture caveats: the left columns **scroll** (Bonus Damage and Damage Reduction are cut off
+at the fold), and the right panel is **tabbed** — so a complete stat picture needs more than one
+capture. Ask for the specific tab that matters rather than trying to collect all eight.
+
+## Unlocking equipment stats raises gear score *and* character stats
+
+The `Locked` entries on an item tooltip are unclaimed stat slots. Unlocking them feeds both the
+gear score aggregate and the character stats above — so an item's contribution is not fixed at
+the item level printed on its slot.
+
+This is why item level alone under-describes a piece, and why the advice engine must treat
+unlock actions as first-class progression steps rather than optional polish. A slot at 72 with
+two locked entries has real headroom that a slot at 72 with everything filled does not, and
+only the tooltip shows the difference.
+
 ## Item tooltips — the richest source, and fully readable
 
 Hovering an equipment slot gives a tooltip that is **completely text-labelled**, unlike every
