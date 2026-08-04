@@ -1,0 +1,77 @@
+{
+  "$comment": [
+    "Throne and Liberty event schedule. Captured from questlog.gg's event calendar on",
+    "2026-08-04 (patch 4.5.0), Americas region.",
+    "",
+    "This is DETERMINISTIC DATA, not a live feed. The calendar renders a fixed weekly grid:",
+    "a region selector, a UTC offset, and the same daily time slots repeating. There is no",
+    "spawn API to poll — reports are that Amazon never exposed one. So the timer computes",
+    "everything locally from this table plus the player's region and timezone, which is more",
+    "reliable than any scraper and has no runtime dependency on a third-party site.",
+    "",
+    "Maintenance: this needs a refresh when a patch changes the rotation. It is a data file",
+    "edit, not a code change — that is the point of shipping it as JSON.",
+    "",
+    "STATUS: time slots and event types are CONFIRMED from the live calendar. The specific",
+    "boss assigned to each Field Boss slot per weekday is NOT yet captured — see",
+    "`bossRotation` below. The timer is useful without it (it can say 'Field Bosses in 18",
+    "minutes'); naming the boss is a refinement."
+  ],
+
+  "version": 1,
+  "capturedAt": "2026-08-04",
+  "gamePatch": "4.5.0",
+
+  "resetHourLocal": 3,
+  "$resetComment": "Daily reset at 03:00 server time. Rotation days are computed from this boundary, not from midnight.",
+
+  "regions": {
+    "Americas": {
+      "defaultTimeZone": "America/New_York",
+      "$tzComment": "questlog displayed UTC-07:00 for Americas at capture time. Servers differ, so this is a default the user overrides in settings — do not hardcode.",
+      "dailySlots": [
+        { "time": "12:00", "type": "DynamicEvents" },
+        { "time": "15:00", "type": "DynamicEvents" },
+        { "time": "18:00", "type": "DynamicEvents" },
+        { "time": "19:00", "type": "FieldBosses" },
+        { "time": "21:00", "type": "DynamicEvents" },
+        { "time": "22:00", "type": "FieldBosses" }
+      ]
+    },
+
+    "Europe": {
+      "defaultTimeZone": "Europe/Berlin",
+      "$status": "NOT CAPTURED — switch the region selector on questlog's event calendar and record the slots. Do not assume they match Americas.",
+      "dailySlots": []
+    },
+
+    "Asia": {
+      "defaultTimeZone": "Asia/Seoul",
+      "$status": "NOT CAPTURED — same procedure as Europe.",
+      "dailySlots": []
+    }
+  },
+
+  "fieldBosses": {
+    "$comment": "Roster from eventCalendar.getFieldBossEntries?input={\"language\":\"en\"}. Ids are questlog's; names are display names. Species tags are NOT in that payload and matter for advice — a boss's species pairs with the character sheet's Species tab, so 'swap to Demon damage before 21:00' becomes possible. Fill them in when captured.",
+    "entries": [
+      { "id": "640E38042632E747", "name": "Adentus", "species": null },
+      { "id": "640E38132611B711", "name": "Talus", "species": null },
+      { "id": "640E38132612C01D", "name": "Grand Aelon", "species": null },
+      { "id": "640E38132613019F", "name": "Chernobog", "species": null },
+      { "id": "640E3813261C9FBE", "name": "Cornelius", "species": null },
+      { "id": "640E38132632DFEB", "name": "Junobote", "species": null },
+      { "id": "640E381328090458", "name": "Daigon", "species": null }
+    ]
+  },
+
+  "bossRotation": {
+    "$status": "NOT CAPTURED. Which boss occupies each Field Boss slot on each weekday. Capture by opening each day on questlog's event calendar. Until filled, the timer announces the slot type ('Field Bosses') without naming the boss.",
+    "byWeekday": {}
+  },
+
+  "archBosses": {
+    "$status": "NOT CAPTURED. Arch bosses run a separate, less frequent schedule. Ramux arrived in 4.5.0 (Stillreach, two-phase with Atirat). A 'Boosted Arch Bosses' event ran 2026-07-28 to 2026-08-11 with four spawning simultaneously — note that limited-time events perturb the normal rotation, so the timer should support a temporary override rather than assuming the base table always holds.",
+    "entries": []
+  }
+}
