@@ -3,16 +3,26 @@ using Loadstar.Core.Configuration;
 namespace Loadstar.Games.ThroneAndLiberty;
 
 /// <summary>
-/// Capture region presets, expressed as fractions of the game window so they survive any
-/// resolution. Calibrated against a live 16:10 client on 2026-08-03 — re-check after a UI patch.
+/// What we crop before sending a capture to the model.
+///
+/// The important lesson from calibrating against a live client: **most of Throne and Liberty's
+/// panels are user-movable**, so cropping to a fixed rectangle is wrong for almost everything.
+/// The player drags the inventory somewhere else and the crop silently starts capturing floor
+/// tiles. Only the currency bar is safe to crop, because it is anchored to the screen edge.
+///
+/// Everything else is captured as the full window, and locating the panel is the model's job —
+/// which it is good at, unlike naming icons.
+///
+/// Calibrated 2026-08-03 against patch 4.5.0 on a 16:10 client.
 /// </summary>
 public static class ScreenRegions
 {
     /// <summary>
-    /// The currency and token bar. It spans the full width of the very top of the screen:
-    /// gold and the common tokens sit at the left, event and dungeon currencies at the right.
-    /// The player has to expand it first ("View all currency"), which is a first-run
-    /// instruction, not something we can do for them — see <see cref="Notes"/>.
+    /// The currency and token bar: full width, hard against the top edge, about 3.5% tall.
+    /// Anchored to the screen rather than draggable, so this crop is stable.
+    ///
+    /// Left to right: Lucent, Sollant, Contract, Guild, Restoration, Ornate, Loyalty, Boost
+    /// Ticket. Icons and numbers only — see <see cref="Notes"/>.
     /// </summary>
     public static readonly CaptureRegion CurrencyBar = new()
     {
@@ -23,51 +33,77 @@ public static class ScreenRegions
     };
 
     /// <summary>
-    /// Character and equipment panel. Roughly the centre of the screen when open; generous
-    /// bounds because the panel's position shifts a little with UI scale.
+    /// The whole client area. Used for every movable panel — inventory, character sheet,
+    /// merchants. Costs more tokens than a crop and is worth it: a crop that misses the panel
+    /// costs the same and returns nothing.
     /// </summary>
-    public static readonly CaptureRegion CharacterPanel = new()
+    public static readonly CaptureRegion FullWindow = new()
     {
-        Left = 0.10,
-        Top = 0.08,
-        Width = 0.70,
-        Height = 0.80,
-    };
-
-    public static readonly CaptureRegion InventoryPanel = new()
-    {
-        Left = 0.45,
-        Top = 0.08,
-        Width = 0.50,
-        Height = 0.80,
+        Left = 0.0,
+        Top = 0.0,
+        Width = 1.0,
+        Height = 1.0,
     };
 
     /// <summary>
-    /// Regions we deliberately never capture. The bottom-left corner carries party list and
-    /// chat, which means other players' names and whatever they typed. None of that helps the
-    /// advice and all of it would be sent to a third-party API, so it is excluded by default.
+    /// Which capture each in-game screen wants. Anything movable gets the full window.
     /// </summary>
-    public static readonly IReadOnlyList<CaptureRegion> PrivacyExclusions =
+    public static CaptureRegion ForScreen(TlScreen screen) => screen switch
+    {
+        TlScreen.CurrencyBar => CurrencyBar,
+
+        // Character sheet is full-screen by design; inventory and merchants are draggable.
+        // All three therefore need the whole window.
+        TlScreen.CharacterSheet => FullWindow,
+        TlScreen.Inventory => FullWindow,
+        TlScreen.Merchant => FullWindow,
+
+        _ => FullWindow,
+    };
+
+    /// <summary>
+    /// Areas to blank out before sending, wherever they land. The bottom-left corner carries
+    /// the party list and chat — other players' names and whatever they typed. None of it
+    /// improves the advice and all of it would leave the machine, so it is masked by default.
+    /// </summary>
+    public static readonly IReadOnlyList<CaptureRegion> PrivacyMasks =
     [
         new CaptureRegion { Left = 0.0, Top = 0.72, Width = 0.32, Height = 0.28 },
     ];
 
     /// <summary>
-    /// Findings from calibrating against the live client that the vision prompt has to account
-    /// for. These are product constraints, not implementation details.
+    /// Findings from the live client that the vision prompt and the identification pipeline
+    /// have to account for. These are product constraints, not trivia.
     /// </summary>
     public const string Notes = """
-        The currency bar renders as ICONS PLUS NUMBERS WITH NO TEXT LABELS. A model looking at
-        a cropped currency bar sees eight coloured icons and eight numbers, and has no reliable
-        way to name them — the names only exist in hover tooltips, and hovering would mean
-        sending input to the game, which this project does not do.
+        READABILITY VARIES ENORMOUSLY BY SCREEN. Treat them differently:
 
-        So we do not ask the model to guess. On first run the user opens the full currency
-        window once, which lists every currency by name next to its icon. That single capture
-        becomes a per-user reference the model is given alongside every later currency crop,
-        turning an unanswerable identification problem into a lookup.
+        Character sheet — the good one. Full-screen, and genuinely text-rich: named stats with
+        values (Strength 40, Dexterity 80, Wisdom 96 …), weapon and defence effects, and
+        crucially AN ITEM LEVEL NUMBER ON EVERY EQUIPMENT SLOT (72, 75, 71, 50 …). That is the
+        single highest-value capture in the game: item level per slot is exactly what a target
+        build compares against, and a slot sitting at 50 among neighbours at 72+ is a concrete,
+        actionable gap. Prefer this screen over everything else.
 
-        The bar must be expanded by the player before it shows anything beyond gold. Collapsed
-        is the default state, so the first-run flow has to say so explicitly.
+        Currency bar — numbers, no names. Eight icons and eight numbers. Names live only in
+        hover tooltips, and hovering is input, which this project does not do. Resolved with a
+        one-time named-currency reference capture instead of guessing.
+
+        Inventory — icons and stack counts, no names. Rarity is legible from tile border colour;
+        capacity reads plainly (101/160). Item identity does not. Resolved by matching tiles
+        against a local icon index built from questlog's catalogue, before the model sees them.
+
+        PANELS MOVE. Inventory and most windows are draggable, so fixed crops are unsafe. Only
+        the currency bar is edge-anchored. Everything else: capture the full window and let the
+        model locate the panel.
         """;
+}
+
+public enum TlScreen
+{
+    Unknown = 0,
+    CurrencyBar,
+    CharacterSheet,
+    Inventory,
+    Merchant,
 }
