@@ -205,7 +205,19 @@ carrying −12 Boss Magic Hit Chance and −6 across all three Boss Critical Hit
 damage in exactly the content that matters most (world bosses, archbosses, raids). Negative
 boss stats should be surfaced ahead of positive-but-small gains elsewhere.
 
-Tab 6 is **Face Off** (tooltip confirmed). Tabs 6–7 not yet captured.
+**Tab 6 — PvP ("Face Off").** PvP-specific mirrors of the same combat stats, all positive on
+this character. Offence: PvP Melee/Ranged Critical Hit Chance 29, PvP Magic Critical Hit Chance
+11, PvP Melee Hit 43, PvP Ranged Hit 50.2, PvP Magic Hit 43, PvP Heavy Attack Chance 24 across
+all three, **PvP Damage +0%**. Defence: PvP Endurance 32 across all three, PvP Melee/Magic
+Evasion 47.5, PvP Ranged Evasion 83.5, PvP Melee Heavy Attack Evasion 72.5, PvP Ranged/Magic
+Heavy Attack Evasion 36.5, **PvP Damage Received −10%**.
+
+**PvP and PvE are separate stat axes**, and this character is invested defensively in PvP
+(−10% damage taken) with no offensive PvP damage at all. That is a coherent build choice, not a
+gap — so the advice engine must not "fix" it. Which axis to optimise comes from the imported
+build's own tags (questlog builds carry tags like *PVP Evasion*), not from assuming PvE.
+
+Tab 7 not yet captured.
 
 **Species pairs with the boss timer.** Monsters and bosses belong to these species, so knowing
 which species the next world boss is turns a generic suggestion into a timed, specific one —
