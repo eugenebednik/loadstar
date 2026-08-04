@@ -217,7 +217,21 @@ Heavy Attack Evasion 36.5, **PvP Damage Received −10%**.
 gap — so the advice engine must not "fix" it. Which axis to optimise comes from the imported
 build's own tags (questlog builds carry tags like *PVP Evasion*), not from assuming PvE.
 
-Tab 7 not yet captured.
+**Tab 7 — Miscellaneous.** The economy tab, and the one most directly aligned with what
+Loadstar exists to do. EXP Bonus +10%, Item Chance +3%, Abyssal Contract Token Bonus +0%,
+Abyssal Contract Token Efficiency +7%, Weapon Mastery EXP Bonus +4.3%, Sollant Bonus,
+Gathering Material Acquisition Rate +0% (several entries), Fishing Bonus Level 3, Fishing
+Mastery Bonus **−3%**, Cooking Mastery Bonus +0%.
+
+These are **acquisition multipliers** — rates at which Sollant, drops, tokens and XP come in.
+That is the other half of the problem: the tool's remit is spending resources well, but earning
+them faster compounds, and a player sitting at +0% Sollant Bonus and +0% gathering rate has
+untouched leverage that no amount of clever spending advice replaces. Advice that only ever
+optimises the spend side is solving half the problem.
+
+Note Fishing Mastery Bonus is negative (−3%), so this tab carries penalties too.
+
+All seven tabs now captured.
 
 **Species pairs with the boss timer.** Monsters and bosses belong to these species, so knowing
 which species the next world boss is turns a generic suggestion into a timed, specific one —
