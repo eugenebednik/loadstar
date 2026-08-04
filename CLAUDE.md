@@ -308,6 +308,62 @@ Practical rules for the advice engine:
 
 Stat Points shown as `0` on the panel are *unspent* points, distinct from this redistribution.
 
+### Stat breakpoints — value is non-linear, and this is the headline optimisation
+
+Hovering a stat reveals an **Achievement Effect** list: bonuses that unlock at specific
+thresholds. Strength, observed at 40:
+
+| Threshold | Effect |
+| --- | --- |
+| 30 ✓ | Max Health 750 |
+| **40 ✓** | Damage Reduction 30 |
+| 50 | Heavy Attack Chance 100 |
+| 60 | Max Health 900 |
+| 70 | Max Health 450 · Melee Defense 200 · Ranged Defense 200 |
+| 80 | Max Health 450 · Heavy Attack Chance 60 |
+| 100 | Max Health 600 · Damage Reduction 18 |
+| 120 | Max Health 600 · Heavy Attack Damage 5% |
+
+Achieved tiers render highlighted, unachieved ones greyed. The tooltip also breaks down the
+stat's **sources** — Base 16, Equipment 23, Stellar Journey 1 — and offers `Alt` → View More.
+
+**Stat value has two components, and conflating them produces wrong advice.**
+
+1. **Continuous scaling.** Every point does something. Strength's own tooltip: *"Provides strong
+   Defense in addition to increasing Max Health, Health Regen, Max Damage, and Min Damage."*
+   That scaling is smooth — a point from 96 to 97 is not wasted.
+2. **Discrete Achievement Effects.** The tiers above, layered *on top* of the continuous
+   scaling. These are all-or-nothing: at 96 Wisdom you hold the 80-tier bonus and not the
+   100-tier one, regardless of how close you are.
+
+So breakpoints are a **bonus on top of a gradient**, not the only source of value. Do not
+describe intermediate points as wasted — they aren't.
+
+What this actually implies is subtler and more useful: **the marginal value of a point is
+uneven.** A point that completes a threshold buys its continuous scaling *plus* a discrete
+bonus; a point in the middle of a band buys only the scaling. So the optimisation is finding
+**cheap threshold completions**, not reclaiming imaginary waste.
+
+Worked example (Str 40, Dex 80, Wis 96, Per 80, For 71):
+
+- Strength 40, Dexterity 80, Perception 80 sit exactly on tiers.
+- **Wisdom 96 is 4 points from the 100 tier** — the cheapest available bonus on the sheet, and
+  the first thing to look at.
+- Fortitude 71 is 9 from 80; Strength 40 is 10 from 50.
+
+Rules for the advice engine:
+
+- **Report distance to the next threshold alongside the value**: "Wisdom 96 — 4 from the 100
+  bonus" is actionable; "Wisdom 96" is not.
+- **Rank candidate moves by points-required per bonus gained**, since every point also carries
+  continuous value and nothing is truly stranded.
+- **Never claim intermediate points are wasted.** They scale; saying otherwise is wrong and the
+  player will know it.
+- **Thresholds are per-stat.** Do not assume Strength's 30/40/50/60/70/80/100/120 ladder
+  generalises — capture each stat's own tooltip.
+- Combine with redistribution: crossing a threshold costs only reallocation, which still makes
+  it among the highest-confidence recommendations available.
+
 ## Buff systems — Amitoi, morphs, food
 
 Stacking these is a major progression axis, and it is largely invisible in gear-focused advice.
