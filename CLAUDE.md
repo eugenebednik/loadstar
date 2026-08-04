@@ -534,9 +534,20 @@ Corrections this forces on the advice engine:
 - Combine with redistribution: crossing a threshold costs only reallocation, which still makes
   it among the highest-confidence recommendations available.
 
-## Never compare allocated points directly — compare totals, then check breakpoints
+## Compare totals, not allocated points — and always show what a move costs
 
-**This is the most important rule for build comparison, and it was learned by getting it wrong.**
+**The rule here came from a recommendation that was correct but incompletely justified.** Worth
+stating precisely, because the distinction changes what a future session should do.
+
+The advice — *move allocated points out of Strength into Dexterity and Perception* — was
+**right**. PvE healers do prefer Dexterity, Perception and Wisdom over Strength; that is the
+meta and it is confirmed by the player. What was missing was the **accounting**: the move drops
+Strength from 40 to 34 and gives up the Strength 40 tier's Damage Reduction 30, and that was
+never surfaced.
+
+So the failure was not the conclusion, it was presenting a trade as a pure gain. **Do not let
+this discourage making specific recommendations** — specificity is the product. Make them, and
+state the cost alongside.
 
 questlog stores each build's `attributes` as **allocated** points (`str`, `dex`, `int`, `per`,
 `con` — mapping to Strength, Dexterity, **Wisdom**, Perception, **Fortitude**). Base starts at 10
@@ -548,13 +559,15 @@ The trap is that **allocated targets assume the build author's equipment.** A bu
 what I need." Copy that number onto a character with different gear and you get a different
 total, and possibly lose a breakpoint the author never lost.
 
-Worked failure, from a real recommendation that was wrong:
+Worked example — the recommendation is sound, the accounting is what's easy to miss:
 
 - Target build says `str: 0`; the player has `str: 6` allocated.
-- "Move 6 out of Strength" looks obviously correct.
+- "Move 6 out of Strength" is **the right call for a PvE healer** — Dexterity, Perception and
+  Wisdom outperform Strength for that role.
 - But the player's Strength is 40 = base 16 + **equipment 23** + Stellar Journey 1.
 - Dropping allocation takes base to 10 and **total to 34** — still above the 30 tier, but it
-  **loses the Strength 40 tier and its Damage Reduction 30**.
+  **gives up the Strength 40 tier and its Damage Reduction 30**.
+- The move is still worth making. The player just needs to be told it costs that.
 
 The correct procedure:
 
@@ -563,15 +576,23 @@ The correct procedure:
 2. Check which **breakpoints are held or lost** at that projected total, for every stat touched.
 3. Price the move in stat points using the **base-driven escalation** — refunds and spends are
    not symmetric when a base sits at the 30 threshold.
-4. **Present gains and losses together.** "Gains +6 Dexterity toward the 30-base tier; costs
-   Damage Reduction 30 from the Strength 40 tier" is honest. "Move 6 points out of Strength" is
-   not, and it is the kind of confident, specific, wrong advice that destroys trust fastest.
+4. **Present gains and losses together.** "Move 6 out of Strength into Dexterity — gains the
+   Dexterity 30-base tier, costs Damage Reduction 30 from Strength 40" is complete. "Move 6
+   points out of Strength" is the same advice with the price hidden, and a player who later
+   notices the loss will stop trusting the rest.
 
-Where the answer is genuinely uncertain — is flat mitigation worth more than crit and buff
-duration on a healer? — **say so and show both sides** rather than picking. Published guidance
-puts Wisdom and Perception first for healers (mana, regen, buff duration, debuff chance, at
-least 30 each) and treats Strength as the mitigation stat, but a min-max author choosing `str: 0`
-is making a call about *their* gear, not stating a universal law.
+### Resolved: Strength versus Dexterity/Perception/Wisdom for PvE healers
+
+**Dexterity, Perception and Wisdom win.** Published guidance puts Wisdom (mana, mana regen) and
+Perception (buff duration, debuff chance) first for healers, at minimum 30 each, with Strength
+as the mitigation stat — and the player confirms PvE healers prefer those over Strength in
+practice. So on a healer, giving up Damage Reduction 30 to fund Dexterity and Perception is the
+correct trade.
+
+Recommend it. Just quote the cost.
+
+This is a role-specific answer, not a universal one — the same move on a tank or bruiser would
+be wrong. Read the build's tags (`pve`, `healer`, `pvp`) before applying it.
 
 ## Buff systems — Amitoi, morphs, food
 
