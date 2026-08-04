@@ -163,7 +163,31 @@ partner to the build import: the build states the target, this screen states the
 
 Two capture caveats: the left columns **scroll** (Bonus Damage and Damage Reduction are cut off
 at the fold), and the right panel is **tabbed** — so a complete stat picture needs more than one
-capture. Ask for the specific tab that matters rather than trying to collect all eight.
+capture. Ask for the specific tab that matters rather than trying to collect all of them.
+
+### The right-hand tabs (7 total)
+
+The left three columns stay fixed while the right panel swaps. Captured 2026-08-03:
+
+**Tab 1 — Vitals and modifiers.** Max Health 36,009, Max Mana 16,692, Max Stamina 100 and their
+regen values; Mana Cost Efficiency +48.8%, Cooldown Speed +120%, Movement Speed 745, Attack
+Speed +59.96%, Healing +205.61%, Skill Healing over Time +72.38%, Shield Health +107.4%, Amitoi
+Healing +637.28%, Potion Healing +127%, Range +65.1%, plus received/incoming counterparts.
+
+**Tab 2 — Crowd control.** Eight effects, each a Chance/Resistance pair: Weaken (568 / 755.8),
+Stun (524 / 589), Petrification (524 / 564), Sleep (458 / 564), Silence (503 / 539), Fear
+(524 / 543), Bind (524 / 564), Collision (524 / 564).
+
+**Tab 3 — Species.** Five species — **Humanoid, Undead, Wildkin, Construct, Demon** — each with
+four values: Damage Boost, Bonus Damage, Damage Resistance, Damage Reduction. Example: Humanoid
+101.4 / 10 / 66 / 8; Demon 101.4 / 10 / 66 / 32.
+
+Tabs 4–7 not yet captured.
+
+**Species pairs with the boss timer.** Monsters and bosses belong to these species, so knowing
+which species the next world boss is turns a generic suggestion into a timed, specific one —
+"swap to Demon damage before the 21:00 spawn". Worth wiring the boss schedule's species tag
+into the advice prompt.
 
 ## Unlocking equipment stats raises gear score *and* character stats
 
