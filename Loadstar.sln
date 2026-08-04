@@ -3,6 +3,12 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{39AA676A-B01C-4AE0-8018-FDE74AFF7ACE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Loadstar.Core", "src\Loadstar.Core\Loadstar.Core.csproj", "{79582294-3BFD-4940-9C24-17C4048FA551}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Loadstar.Games.ThroneAndLiberty", "src\Loadstar.Games.ThroneAndLiberty\Loadstar.Games.ThroneAndLiberty.csproj", "{69AEECD4-6899-4AA7-B1BA-07B780371023}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -10,5 +16,19 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{79582294-3BFD-4940-9C24-17C4048FA551}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{79582294-3BFD-4940-9C24-17C4048FA551}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{79582294-3BFD-4940-9C24-17C4048FA551}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{79582294-3BFD-4940-9C24-17C4048FA551}.Release|Any CPU.Build.0 = Release|Any CPU
+		{69AEECD4-6899-4AA7-B1BA-07B780371023}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{69AEECD4-6899-4AA7-B1BA-07B780371023}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{69AEECD4-6899-4AA7-B1BA-07B780371023}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{69AEECD4-6899-4AA7-B1BA-07B780371023}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{79582294-3BFD-4940-9C24-17C4048FA551} = {39AA676A-B01C-4AE0-8018-FDE74AFF7ACE}
+		{69AEECD4-6899-4AA7-B1BA-07B780371023} = {39AA676A-B01C-4AE0-8018-FDE74AFF7ACE}
 	EndGlobalSection
 EndGlobal

@@ -11,7 +11,10 @@
     <PackageReference Include="Anthropic" Version="12.9.0" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
-    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+    <!-- No explicit System.Text.Json pin: the Anthropic SDK requires >= 10.0.2, and pinning
+         8.0.5 here is a downgrade that fails the build under TreatWarningsAsErrors. Let it
+         resolve transitively. -->
+
   </ItemGroup>
 
 </Project>

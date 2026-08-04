@@ -1,3 +1,4 @@
+using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -7,7 +8,12 @@ namespace Loadstar.Core.Configuration;
 /// Stores the provider API key encrypted with Windows DPAPI, scoped to the current user.
 /// The ciphertext is useless to another account on the same machine and to another machine
 /// entirely, which is the whole reason this isn't just a field in settings.json.
+///
+/// <para>Windows-only by construction. The rest of Loadstar.Core is platform-neutral so it stays
+/// testable off-Windows, so this type is annotated rather than the whole assembly retargeted —
+/// callers get a compile-time error instead of a runtime failure on another OS.</para>
 /// </summary>
+[SupportedOSPlatform("windows")]
 public sealed class SecretStore
 {
     private readonly string _path;
