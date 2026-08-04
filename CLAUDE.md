@@ -193,7 +193,19 @@ Two things matter here. **Directional stats can be negative** — the hat toolti
 zeros is not noise, it is **untapped headroom**: this is an advanced optimisation axis the
 player has not engaged with, which is worth knowing before recommending it as a priority.
 
-Tabs 5–7 not yet captured.
+**Tab 5 — Boss.** Boss-specific versions of the combat stats. Offence: Boss Melee/Ranged/Magic
+Critical Hit Chance **−6** each, Boss Melee Hit Chance 12, Boss Ranged Hit Chance 12, Boss Magic
+Hit Chance **−12**, Boss Melee/Ranged/Magic Heavy Attack Chance 7 each, Boss Bonus Damage 7.
+Defence: Boss Melee/Ranged/Magic Endurance 12, Boss Evasion 8 across all three, Boss Heavy
+Attack Evasion 0, Boss Damage Reduction 55.
+
+**This is the most directly actionable tab seen so far**, because several values are *negative* —
+they are active penalties against boss content, not merely unfilled headroom. A character
+carrying −12 Boss Magic Hit Chance and −6 across all three Boss Critical Hit Chances is losing
+damage in exactly the content that matters most (world bosses, archbosses, raids). Negative
+boss stats should be surfaced ahead of positive-but-small gains elsewhere.
+
+Tab 6 is **Face Off** (tooltip confirmed). Tabs 6–7 not yet captured.
 
 **Species pairs with the boss timer.** Monsters and bosses belong to these species, so knowing
 which species the next world boss is turns a generic suggestion into a timed, specific one —
