@@ -141,6 +141,39 @@ Two mechanisms replace guessing:
 The model's job is reading **numbers and layout**, which it is reliable at. Identification is
 ours.
 
+## Item tooltips — the richest source, and fully readable
+
+Hovering an equipment slot gives a tooltip that is **completely text-labelled**, unlike every
+icon grid in the game. Observed 2026-08-03 on one headgear slot:
+
+- **Name, rarity, slot, item level** — `Frigid Melody Hat` / `Epic | Headgear` / `Item Level 72`
+- **Base defences** — Melee Defense 432, Ranged Defense 387
+- **Rolled stats** — Wisdom 7, Strength 7, Heavy Attack Evasion 152, Mana Cost Efficiency
+  +13.2%, Max Health 890
+- **Traits, with fill pips and locked slots** — `Cooldown Speed +6%` at 4 pips, then two entries
+  reading `Locked`
+- **Rune-style lines with levels** — Back Hit Chance 5.6 (Lv. 8), Species Damage Boost 2.2
+  (Lv. 11), plus PvP-specific modifiers and a `Synergy:` line
+- **Set progress and set bonuses** — `Frigid Melody Set (4/5)` with per-piece item levels, and
+  the 2-piece and 4-piece effects spelled out
+- **Sale Price** (109,090) and material type (Cloth)
+- Two hotkey hints: **`Alt+C` View Max Item Level Value** and **`Alt+G` Switch to Detailed View**
+
+Four things follow:
+
+1. **This is the ground truth for gear.** Anything derived from an icon is a guess; a tooltip
+   capture is authoritative. When precision matters, ask for the tooltip.
+2. **Locked trait slots are a progression lever** the item-level number alone never reveals.
+   A 72 with two locked slots has headroom a 72 with three filled slots does not.
+3. **Set completion is a discrete cliff.** `(4/5)` means one piece away from a bonus — worth
+   far more than a marginal item-level bump elsewhere, and invisible without the tooltip.
+4. **`Alt+C` shows the item's maximum item level value**, which is exactly the current-vs-
+   ceiling comparison the advice engine wants. Worth prompting the user to capture.
+
+The cost is that tooltips need hovering, which is input, so they are user-initiated captures.
+Thirteen slots is too many to ask for routinely — so: local icon matching for bulk inventory,
+tooltip captures for the handful of slots actually under consideration.
+
 ## Currencies — left to right along the top bar
 
 Authoritative; supplied by a player of the account, then cross-checked. **Only two of these
