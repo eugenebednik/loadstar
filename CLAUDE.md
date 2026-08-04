@@ -359,8 +359,42 @@ Rules for the advice engine:
   continuous value and nothing is truly stranded.
 - **Never claim intermediate points are wasted.** They scale; saying otherwise is wrong and the
   player will know it.
-- **Thresholds are per-stat.** Do not assume Strength's 30/40/50/60/70/80/100/120 ladder
-  generalises — capture each stat's own tooltip.
+- **Threshold positions are shared; rewards are not.** All stats captured so far use the same
+  ladder — **30 / 40 / 50 / 60 / 70 / 80 / 100 / 120** — but each grants different bonuses. So
+  distance-to-next-tier can be computed generically, while the *value* of reaching it must come
+  from that stat's own tooltip.
+
+### Captured ladders
+
+Each tooltip also gives a source breakdown (Base / Equipment / Stellar Journey).
+
+**Strength** — *"source of physical prowess; provides strong Defense in addition to increasing
+Max Health, Health Regen, Max Damage, and Min Damage."* Sources at 40: Base 16 / Equipment 23 /
+Stellar Journey 1.
+
+| 30 | 40 | 50 | 60 | 70 | 80 | 100 | 120 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Max Health 750 | Damage Reduction 30 | Heavy Attack Chance 100 | Max Health 900 | Max Health 450 · Melee Def 200 · Ranged Def 200 | Max Health 450 · Heavy Attack Chance 60 | Max Health 600 · Damage Reduction 18 | Max Health 600 · Heavy Attack Damage 5% |
+
+**Dexterity** — *"source of nimbleness; increases quickness and critical attacks in addition to
+Evasion and Max Damage."* Sources at 80: Base 24 / Equipment 55 / Stellar Journey 1.
+
+| 30 | 40 | 50 | 60 | 70 | 80 | 100 | 120 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Crit Hit Chance 100 | Bonus Damage 30 | Movement Speed 5% | Crit Hit Chance 120 | Crit Hit Chance 60 · Evasion 120 | Crit Hit Chance 60 · Bonus Damage 18 | Crit Hit Chance 60 · Attack Speed 4% | Crit Hit Chance 60 · Critical Damage 4% |
+
+**Wisdom** — *"source of mental prowess; increases Max Mana and Mana Regen in addition to
+cooldown abilities and Max Damage."* Sources at 96: Base 30 / Equipment 65 / Stellar Journey 1.
+
+| 30 | 40 | 50 | 60 | 70 | 80 | 100 | 120 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Max Mana 750 | Debuff Duration −5% | Cooldown Speed 5% | Max Mana 900 | Max Mana 450 · Mana Regen 120 | Max Mana 450 · Cooldown Speed 3% | Max Mana 600 · Mana Cost Efficiency 3% | Max Mana 600 · Max Damage 10 |
+
+Perception and Fortitude not yet captured.
+
+**Cheapest available tier on the observed character:** Wisdom 96 → 100, four points, granting
+Max Mana 600 and Mana Cost Efficiency 3%. Dexterity's next tier is twenty points away by
+comparison.
 - Combine with redistribution: crossing a threshold costs only reallocation, which still makes
   it among the highest-confidence recommendations available.
 
