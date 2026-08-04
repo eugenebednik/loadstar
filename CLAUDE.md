@@ -534,6 +534,45 @@ Corrections this forces on the advice engine:
 - Combine with redistribution: crossing a threshold costs only reallocation, which still makes
   it among the highest-confidence recommendations available.
 
+## Never compare allocated points directly — compare totals, then check breakpoints
+
+**This is the most important rule for build comparison, and it was learned by getting it wrong.**
+
+questlog stores each build's `attributes` as **allocated** points (`str`, `dex`, `int`, `per`,
+`con` — mapping to Strength, Dexterity, **Wisdom**, Perception, **Fortitude**). Base starts at 10
+per stat, so allocated = base − 10. Verified: the reference character's bases (16/24/30/29/10)
+give 59 allocated, exactly matching five of the six target loadouts' totals.
+
+The trap is that **allocated targets assume the build author's equipment.** A build specifying
+`str: 0` is not saying "have no Strength" — it is saying "allocate none, because my gear supplies
+what I need." Copy that number onto a character with different gear and you get a different
+total, and possibly lose a breakpoint the author never lost.
+
+Worked failure, from a real recommendation that was wrong:
+
+- Target build says `str: 0`; the player has `str: 6` allocated.
+- "Move 6 out of Strength" looks obviously correct.
+- But the player's Strength is 40 = base 16 + **equipment 23** + Stellar Journey 1.
+- Dropping allocation takes base to 10 and **total to 34** — still above the 30 tier, but it
+  **loses the Strength 40 tier and its Damage Reduction 30**.
+
+The correct procedure:
+
+1. Convert the target's allocated points to a **projected total** using *this character's*
+   equipment and Stellar Journey contributions, not the author's.
+2. Check which **breakpoints are held or lost** at that projected total, for every stat touched.
+3. Price the move in stat points using the **base-driven escalation** — refunds and spends are
+   not symmetric when a base sits at the 30 threshold.
+4. **Present gains and losses together.** "Gains +6 Dexterity toward the 30-base tier; costs
+   Damage Reduction 30 from the Strength 40 tier" is honest. "Move 6 points out of Strength" is
+   not, and it is the kind of confident, specific, wrong advice that destroys trust fastest.
+
+Where the answer is genuinely uncertain — is flat mitigation worth more than crit and buff
+duration on a healer? — **say so and show both sides** rather than picking. Published guidance
+puts Wisdom and Perception first for healers (mana, regen, buff duration, debuff chance, at
+least 30 each) and treats Strength as the mitigation stat, but a min-max author choosing `str: 0`
+is making a call about *their* gear, not stating a universal law.
+
 ## Buff systems — Amitoi, morphs, food
 
 Stacking these is a major progression axis, and it is largely invisible in gear-focused advice.
