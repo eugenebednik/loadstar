@@ -36,8 +36,40 @@ public static class BuildMapper
             SourceUrl = $"https://questlog.gg/throne-and-liberty/en/character-builder/{slug}",
             WeaponTypes = ReadStringArray(build, "weaponTypes"),
             Equipment = equipment,
+            Attributes = MapAttributes(build),
+            Tags = ReadStringArray(build, "tags"),
             Notes = build.TryGetProperty("note", out var note) ? note.GetString() : null,
         };
+    }
+
+    /// <summary>
+    /// Reads the build's target stat spread.
+    ///
+    /// <para>Carried through with questlog's own keys rather than translated, so nothing is lost in
+    /// transit — and two of those keys are actively misleading if read at face value: <c>int</c> is
+    /// <b>Wisdom</b> and <c>con</c> is <b>Fortitude</b>. <see cref="TlStats.QuestlogAttributeKeys"/>
+    /// owns that mapping.</para>
+    ///
+    /// <para>The values are <b>allocated</b> points, not stat totals. Base starts at 10 per stat, so
+    /// a build reading <c>str: 0</c> is not asking for no Strength — it is allocating none because
+    /// the author's gear supplies what they need.</para>
+    /// </summary>
+    private static IReadOnlyDictionary<string, int> MapAttributes(JsonElement build)
+    {
+        var attributes = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        if (build.TryGetProperty("attributes", out var attrs) && attrs.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var entry in attrs.EnumerateObject())
+            {
+                if (entry.Value.ValueKind == JsonValueKind.Number && entry.Value.TryGetInt32(out var value))
+                {
+                    attributes[entry.Name] = value;
+                }
+            }
+        }
+
+        return attributes;
     }
 
     private static TargetItem MapItem(JsonElement item) => new()

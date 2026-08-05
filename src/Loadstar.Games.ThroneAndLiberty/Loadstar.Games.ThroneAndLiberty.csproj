@@ -6,4 +6,14 @@
   <ItemGroup>
     <ProjectReference Include="..\Loadstar.Core\Loadstar.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Embedded so the schedule travels with the assembly. It is still editable data rather than
+         constants — a patch that changes the rotation is a file edit and a rebuild, not a code
+         change. -->
+    <EmbeddedResource Include="Data\boss-schedule.json" />
+    <!-- The mechanics reference handed to the model. Markdown files rather than string constants so
+         they stay readable and reviewable as documents — they are the product's game knowledge, and
+         a diff on them should be legible to someone who plays the game. -->
+    <EmbeddedResource Include="Knowledge\*.md" />
+  </ItemGroup>
 </Project>

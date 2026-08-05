@@ -35,3 +35,13 @@ public sealed record CharacterBuilds
 
     public bool IsPvp => Tags.Any(t => t.Equals("pvp", StringComparison.OrdinalIgnoreCase));
 }
+
+/// <summary>
+/// A live game server. <paramref name="RegionSlug"/> uses questlog's own values — observed
+/// <c>americas</c>, <c>europe</c> and <c>japan-oceania</c> — and is what selects the boss schedule,
+/// since spawn times differ by region.
+/// </summary>
+public sealed record GameServer(string Name, string RegionSlug, string Status)
+{
+    public override string ToString() => Name;
+}

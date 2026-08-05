@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Windows-targeted because it consumes the capture assembly. The libraries underneath it
+         stay platform-neutral; only this shell is pinned. -->
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <RootNamespace>Loadstar.Poc</RootNamespace>
+    <AssemblyName>loadstar</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Loadstar.Core\Loadstar.Core.csproj" />
+    <ProjectReference Include="..\Loadstar.Games.ThroneAndLiberty\Loadstar.Games.ThroneAndLiberty.csproj" />
+    <ProjectReference Include="..\Loadstar.Capture.Windows\Loadstar.Capture.Windows.csproj" />
+  </ItemGroup>
+
+</Project>

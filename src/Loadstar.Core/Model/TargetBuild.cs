@@ -22,6 +22,21 @@ public sealed record TargetBuild
     public IReadOnlyDictionary<string, int> SkillLevels { get; init; }
         = new Dictionary<string, int>();
 
+    /// <summary>
+    /// The build's target stat spread, keyed by the source's own attribute ids and left
+    /// untranslated here so this type stays game-neutral.
+    ///
+    /// <para>These are <b>allocated</b> points, not totals — the number the player has spent, on top
+    /// of a base every stat starts at. Reading them as totals produces a target that is wrong by
+    /// that base on every stat. They also assume the build author's equipment, so they have to be
+    /// re-projected through the player's own gear before they mean anything.</para>
+    /// </summary>
+    public IReadOnlyDictionary<string, int> Attributes { get; init; }
+        = new Dictionary<string, int>();
+
+    /// <summary>Per-loadout tags, e.g. <c>pve</c>, <c>healer</c>. Decide which stat axis to optimise.</summary>
+    public IReadOnlyList<string> Tags { get; init; } = [];
+
     /// <summary>Author's notes, stripped to plain text. Often contains the priority order.</summary>
     public string? Notes { get; init; }
 

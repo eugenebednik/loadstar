@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- 19041 (Windows 10 2004), not 18362. Direct3D11CaptureFramePool.CreateFreeThreaded is a
+         19041 API, and it is the one that lets a non-UI process capture without pumping a
+         dispatcher queue. Targeting lower would compile and then throw on the older builds it
+         claims to support. -->
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <RootNamespace>Loadstar.Capture.Windows</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Loadstar.Core\Loadstar.Core.csproj" />
+  </ItemGroup>
+
+</Project>

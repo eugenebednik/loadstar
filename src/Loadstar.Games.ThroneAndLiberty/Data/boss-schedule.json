@@ -22,13 +22,141 @@
   "capturedAt": "2026-08-04",
   "gamePatch": "4.5.0",
 
+  "$scheduleShapeIsWrong": [
+    "THE dailySlots MODEL BELOW CANNOT EXPRESS THE REAL SCHEDULE. Captured from a live client",
+    "2026-08-04 (process TL, 1.443.22.7936), the in-game map's Daily tab shows:",
+    "",
+    "  Tue 17:00, 20:00     Wed 17:00, 20:00     Thu  NOTHING",
+    "  Fri 17:00, 20:00     Sat 17:00, 20:00     Sun  18:00 SIEGE (one event)",
+    "  Mon NOTHING",
+    "",
+    "So slots are PER WEEKDAY, not per day: Thursday and Monday are empty, Sunday runs SIEGE at",
+    "18:00 (confirmed by a player — it is scheduled guild PvP, not a boss, so it must not be",
+    "labelled 'Field Bosses'), and the rest run 17:00 and 20:00. The number of bosses per slot",
+    "varies too — some slots show one icon, others five.",
+    "",
+    "A flat dailySlots list repeated every day is therefore wrong in three separate ways. This",
+    "needs reshaping to weekday -> slots before the timer can be trusted.",
+    "",
+    "Also note these client times (17:00/20:00) DO NOT MATCH questlog's Americas grid (19:00/",
+    "22:00). The client is authoritative for the player's own server; see $timezoneWarning."
+  ],
+
+  "$iconIndex": [
+    "The map's Content Settings window lists EVERY boss next to its icon WITH ITS NAME IN TEXT —",
+    "roughly 38 bosses (most in normal and 'Ascended' form), 9 archbosses including Ramux, and 6",
+    "boonstones. That single screen is a complete icon->name index, and capturing it once solves",
+    "the schedule's icon problem the same way the named-currency reference solves the currency",
+    "bar's. Prompt for it on first run.",
+    "",
+    "Each entry has a checkbox. A boss the player has unticked does not appear on their schedule",
+    "at all, so the index doubles as the filter state and both are worth reading.",
+    "",
+    "Consequence: the fieldBosses roster below (seven entries, from getFieldBossEntries) is badly",
+    "incomplete and should not be built on."
+  ],
+
+  "$regionCoverage": [
+    "questlog only has real boss data for EUROPE. Confirmed 2026-08-04 by a player of the game,",
+    "and consistent with what the calendar renders: Europe shows named T3/T2 pairs per slot,",
+    "while Americas shows only generic 'Field Bosses' markers and Asia shows nothing.",
+    "",
+    "So the Americas entries below are NOT a captured boss rotation — they are questlog's generic",
+    "event markers. Do not present them as a boss schedule, and do not wait for questlog to fill",
+    "in NA or Asia; the data is not there to scrape.",
+    "",
+    "THE REAL SOURCE FOR NA AND ASIA IS THE PLAYER'S OWN CLIENT. The in-game map lists the day's",
+    "bosses and spawn times down the left side, per-server accurate by definition, for every",
+    "region including the ones no external site covers. That makes it a user-initiated capture —",
+    "the same pattern already used for the Combat Power tooltip and the named-currency reference,",
+    "and something this app can already do. See docs/boss-timer.md, which reached this conclusion",
+    "before the region gap was confirmed."
+  ],
+
+  "$timeModel": [
+    "HOW TIMES ARE STORED, AND WHY NOT IN UTC.",
+    "",
+    "Each region's slots are WALL-CLOCK TIMES plus a named timeZone (defaultTimeZone). BossSchedule",
+    "converts them to a real instant at read time and everything downstream — countdown, alerts,",
+    "the overlay — works in instants and renders in the USER'S OWN local timezone. So the pipeline",
+    "already is 'schedule -> absolute instant -> viewer's clock'; the only thing not stored in UTC",
+    "is the table itself.",
+    "",
+    "Storing the table as UTC would be actively worse IF the game schedules by Pacific wall clock:",
+    "17:00 Pacific is 00:00 UTC in summer and 01:00 UTC in winter, so a UTC table would be an hour",
+    "wrong for half the year and would need re-capturing twice annually. Wall clock plus a zone",
+    "survives that automatically.",
+    "",
+    "OPEN QUESTION, and it decides which model is right: does the in-game schedule shift with US",
+    "daylight saving, or is it pinned to a fixed offset? The client renders times in the VIEWER'S",
+    "local timezone (confirmed: a Pacific player sees 17:00/20:00), which does not by itself reveal",
+    "what the underlying schedule is anchored to. Check the same slot before and after a DST",
+    "boundary: if the local hour holds, wall-clock storage is correct and nothing changes. If it",
+    "moves by an hour, the schedule is UTC-anchored and this table must be converted to UTC."
+  ],
+
+  "$timezoneWarning": [
+    "UNRESOLVED, AND IT INVALIDATES EVERY HOUR IN THIS FILE IF WRONG.",
+    "",
+    "questlog's calendar renders a 'UTC -07:00' header, which is the VIEWER'S timezone, not the",
+    "server's. So the hour values captured from that page may already be converted into the",
+    "capturing machine's local time rather than being server-local wall clock. Both the Americas",
+    "and Europe slots here were read off that page from a UTC-07:00 machine.",
+    "",
+    "If they are viewer-local, every entry is offset by the difference between UTC-07:00 and the",
+    "player's server timezone — for Europe that is around nine hours, which would make the",
+    "countdown confidently and consistently wrong.",
+    "",
+    "TO RESOLVE: load the calendar from a machine in a different timezone, or change the browser",
+    "timezone, and see whether the printed hours move. If they move, they are viewer-local and",
+    "must be converted back to server-local before being stored here. BossSchedule treats these",
+    "as server-local wall clock, which is the correct model — the open question is only whether",
+    "the captured numbers already are."
+  ],
+
   "resetHourLocal": 3,
   "$resetComment": "Daily reset at 03:00 server time. Rotation days are computed from this boundary, not from midnight.",
 
   "regions": {
     "Americas": {
-      "defaultTimeZone": "America/New_York",
-      "$tzComment": "questlog displayed UTC-07:00 for Americas at capture time. Servers differ, so this is a default the user overrides in settings — do not hardcode.",
+      "defaultTimeZone": "America/Los_Angeles",
+      "$tzComment": [
+        "PACIFIC, confirmed by a player of the game 2026-08-04: the in-game schedule times are all",
+        "Pacific. This was America/New_York until then, which would have put every Americas",
+        "countdown THREE HOURS out — and plausibly so, since the numbers would still have looked",
+        "like sensible evening times.",
+        "",
+        "Still a default the user can override in settings rather than a fact about every server."
+      ],
+      "$source": [
+        "weeklySlots is CAPTURED FROM A LIVE CLIENT (2026-08-04) and is the authoritative one.",
+        "dailySlots below it is the older questlog-derived guess, kept only so the difference is",
+        "visible: questlog claims field bosses at 19:00/22:00, the client shows 17:00/20:00.",
+        "weeklySlots wins wherever both are present."
+      ],
+      "weeklySlots": {
+        "Monday": [],
+        "Tuesday": [
+          { "time": "17:00", "type": "FieldBosses" },
+          { "time": "20:00", "type": "FieldBosses" }
+        ],
+        "Wednesday": [
+          { "time": "17:00", "type": "FieldBosses" },
+          { "time": "20:00", "type": "FieldBosses" }
+        ],
+        "Thursday": [],
+        "Friday": [
+          { "time": "17:00", "type": "FieldBosses" },
+          { "time": "20:00", "type": "FieldBosses" }
+        ],
+        "Saturday": [
+          { "time": "17:00", "type": "FieldBosses" },
+          { "time": "20:00", "type": "FieldBosses" }
+        ],
+        "Sunday": [
+          { "time": "18:00", "type": "Siege" }
+        ]
+      },
       "dailySlots": [
         { "time": "12:00", "type": "DynamicEvents" },
         { "time": "15:00", "type": "DynamicEvents" },
@@ -41,13 +169,36 @@
 
     "Europe": {
       "defaultTimeZone": "Europe/Berlin",
-      "$status": "NOT CAPTURED — switch the region selector on questlog's event calendar and record the slots. Do not assume they match Americas.",
-      "dailySlots": []
+      "$status": "CAPTURED 2026-08-04 from questlog's event calendar. SEE $timezoneWarning — the hour values are NOT yet confirmed to be server-local.",
+      "$note": [
+        "Europe is NOT a copy of Americas, which is why assuming it was would have been wrong:",
+        "it runs FIVE boss slots a day (Americas runs two) and pairs a T3 'Ascended' boss with a",
+        "T2 boss in every one. Observed names include Ascended Morokai, Ascended Cornelius,",
+        "Ascended Adentus and Ascended Chernobog on the T3 side, with Pakilo Naru and Daigon on",
+        "the T2 side. Morokai and Pakilo Naru do not appear in the fieldBosses roster below, so",
+        "that roster is Americas-shaped and incomplete for Europe.",
+        "",
+        "Per-weekday boss assignment is still NOT captured: the Boss Schedule grid renders each",
+        "boss as an image with no alt text, so names only appear on hover."
+      ],
+      "dailySlots": [
+        { "time": "03:00", "type": "DynamicEvents" },
+        { "time": "06:00", "type": "DynamicEvents" },
+        { "time": "09:00", "type": "DynamicEvents" },
+        { "time": "12:00", "type": "DynamicEvents" },
+        { "time": "13:00", "type": "FieldBosses" },
+        { "time": "16:00", "type": "FieldBosses" },
+        { "time": "19:00", "type": "DynamicEvents" },
+        { "time": "20:00", "type": "FieldBosses" },
+        { "time": "21:00", "type": "DynamicEvents" },
+        { "time": "23:00", "type": "FieldBosses" },
+        { "time": "01:00", "type": "FieldBosses" }
+      ]
     },
 
     "Asia": {
       "defaultTimeZone": "Asia/Seoul",
-      "$status": "NOT CAPTURED — same procedure as Europe.",
+      "$status": "NO SOURCE. questlog has no boss data for this region — see $regionCoverage.",
       "dailySlots": []
     }
   },

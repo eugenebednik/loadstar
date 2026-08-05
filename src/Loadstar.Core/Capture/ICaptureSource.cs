@@ -27,8 +27,11 @@ public interface ICaptureSource : IDisposable
 
 public sealed record CaptureRequest
 {
-    /// <summary>Substring matched against window titles to find the game.</summary>
-    public required string WindowTitleMatch { get; init; }
+    /// <summary>
+    /// Which window to read. Configuration the user confirmed, not a per-capture guess — see
+    /// <see cref="WindowTarget"/> for why that distinction is load-bearing.
+    /// </summary>
+    public required WindowTarget Target { get; init; }
 
     /// <summary>Crop, as fractions of the window. Null captures the whole client area.</summary>
     public CaptureRegion? Region { get; init; }

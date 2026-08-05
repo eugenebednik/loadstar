@@ -65,3 +65,26 @@ capture is active — the user should never be unsure whether their screen is be
 P/Invoke declarations of the forbidden APIs and fails the build if one appears. It is a
 blunt instrument and it is meant to be — it turns this document from a good intention into
 something CI checks.
+
+It reads IL metadata rather than loading assemblies, so it catches a *declaration* even in
+code nothing ever calls — which is exactly where something like this would get parked. Three
+checks run, deliberately overlapping:
+
+| Check | Catches |
+| --- | --- |
+| Forbidden entry points | The functions in the table above, by name, in any module |
+| Module allowlist | Native libraries nobody thought to forbid — `detours.dll`, a wrapped `d3d9.dll` |
+| Recorded baseline | *Any* change to the native surface, so additions surface in review |
+
+The allowlist deliberately does not pre-authorise `user32` or `kernel32`. Hotkeys are
+permitted by this document, so whoever adds `RegisterHotKey` will have to add `user32` — and
+that is precisely the moment the surrounding P/Invokes deserve a second reading.
+
+The whole native surface is five functions, all in
+`src/Loadstar.Capture.Windows/NativeMethods.cs`: three `combase` calls to reach the
+GraphicsCaptureItem interop factory, and two `d3d11` calls that create **Loadstar's own**
+device to receive frames into. Window discovery uses `System.Diagnostics.Process` and needs
+no P/Invoke and no handle to the game process.
+
+The test has been verified to fail: adding `ReadProcessMemory` and `SendInput` to the capture
+assembly trips all three checks. A guard that has never failed is not known to work.

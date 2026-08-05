@@ -7,7 +7,7 @@ namespace Loadstar.Core.Ai;
 /// prompt construction and response parsing are shared, so adding a provider means writing
 /// one HTTP call, not re-deriving the advice logic.
 /// </summary>
-public interface IAiProvider
+public interface IAiProvider : IDisposable
 {
     string Name { get; }
 
@@ -31,7 +31,21 @@ public sealed record AiRequest
     /// <summary>PNG-encoded captures. Usually one; more when several screens were needed.</summary>
     public required IReadOnlyList<CapturedImage> Images { get; init; }
 
-    public int MaxOutputTokens { get; init; } = 2048;
+    /// <summary>
+    /// Ceiling on the reply.
+    ///
+    /// <para>Sized for more than the visible answer on purpose. Current models reason before
+    /// answering and those tokens come out of this same budget, so a ceiling fitted to the JSON
+    /// alone gets spent on thinking and returns a truncated object — which surfaces as a parse
+    /// failure and reads like a prompt bug rather than a budget one.</para>
+    /// </summary>
+    public int MaxOutputTokens { get; init; } = 8000;
+
+    /// <summary>
+    /// How hard to think, for providers that expose it: <c>low</c>, <c>medium</c>, <c>high</c> or
+    /// <c>max</c>. Anything else leaves the provider's own default in place rather than guessing.
+    /// </summary>
+    public string? Effort { get; init; }
 }
 
 public sealed record CapturedImage

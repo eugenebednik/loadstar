@@ -10,6 +10,19 @@ public sealed record Advice
     public required string Headline { get; init; }
 
     /// <summary>
+    /// Which in-game screen the model believed it was looking at.
+    ///
+    /// <para>Recognised rather than declared: the user presses a hotkey whenever they want an
+    /// answer, so nothing upstream knows whether that moment is the character sheet, the inventory
+    /// or open world. Surfacing it lets the app say "this looks like the inventory, and the
+    /// question you asked needs the character sheet" instead of answering from the wrong screen.</para>
+    /// </summary>
+    public ScreenKind RecognizedScreen { get; init; } = ScreenKind.Unknown;
+
+    /// <summary>The model's own reading of whether the screen could answer the question asked.</summary>
+    public bool AnsweredFromScreen { get; init; } = true;
+
+    /// <summary>
     /// Things the model could not determine and that would change the advice if known.
     /// Surfaced to the player so they know which screen to open next.
     /// </summary>

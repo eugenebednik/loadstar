@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- WinExe, not Exe: this lives in the tray and must not own a console window. -->
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>Loadstar.App</RootNamespace>
+    <AssemblyName>Loadstar</AssemblyName>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Loadstar.Core\Loadstar.Core.csproj" />
+    <ProjectReference Include="..\Loadstar.Games.ThroneAndLiberty\Loadstar.Games.ThroneAndLiberty.csproj" />
+    <ProjectReference Include="..\Loadstar.Capture.Windows\Loadstar.Capture.Windows.csproj" />
+  </ItemGroup>
+
+</Project>

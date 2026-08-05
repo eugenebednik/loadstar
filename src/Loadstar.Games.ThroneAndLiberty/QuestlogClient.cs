@@ -131,6 +131,54 @@ public sealed partial class QuestlogClient
         };
     }
 
+    /// <summary>
+    /// The live server list, grouped by region.
+    ///
+    /// <para>Fetched rather than hardcoded because servers are added and merged over time, and a
+    /// stale built-in list would quietly offer the player a server that no longer exists. Boss
+    /// spawn times differ by region, so knowing which region a chosen server belongs to is what
+    /// makes the countdown correct rather than plausible.</para>
+    ///
+    /// <para>Takes no parameters — unusual for this API, but that is the real signature.</para>
+    /// </summary>
+    public async Task<IReadOnlyList<GameServer>> GetServersAsync(CancellationToken cancellationToken)
+    {
+        using var response = await _http
+            .GetAsync($"{Base}serverStatus.getServerStatus", cancellationToken)
+            .ConfigureAwait(false);
+
+        response.EnsureSuccessStatusCode();
+
+        var payload = await response.Content
+            .ReadFromJsonAsync<JsonElement>(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!payload.TryGetProperty("result", out var result) ||
+            !result.TryGetProperty("data", out var data) ||
+            data.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var servers = new List<GameServer>();
+
+        foreach (var entry in data.EnumerateArray())
+        {
+            var name = entry.TryGetProperty("serverName", out var n) ? n.GetString() : null;
+            var region = entry.TryGetProperty("regionSlug", out var r) ? r.GetString() : null;
+
+            if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(region))
+            {
+                servers.Add(new GameServer(
+                    name,
+                    region,
+                    entry.TryGetProperty("status", out var s) ? s.GetString() ?? "unknown" : "unknown"));
+            }
+        }
+
+        return servers;
+    }
+
     [GeneratedRegex("^[A-Za-z0-9_-]{4,64}$")]
     private static partial Regex SlugPattern();
 }

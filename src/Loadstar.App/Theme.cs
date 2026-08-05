@@ -1,0 +1,198 @@
+using Microsoft.Win32;
+
+namespace Loadstar.App;
+
+/// <summary>
+/// Light and dark palettes, chosen from the user's Windows preference.
+///
+/// <para>Read from <c>AppsUseLightTheme</c> under the Personalize key — the same value the shell and
+/// every well-behaved Windows app uses. This is reading a display preference for our own windows;
+/// nothing is written, and no system setting is modified.</para>
+///
+/// <para>Detection is deliberately forgiving: a missing or unreadable key falls back to light, which
+/// is what Windows itself defaults to, rather than throwing on a machine with an unusual policy.</para>
+/// </summary>
+internal static class Theme
+{
+    private const string PersonalizeKey = @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
+
+    public static bool IsDark { get; private set; } = DetectDark();
+
+    /// <summary>Re-reads the preference, so a theme switch applies to windows opened afterwards.</summary>
+    public static void Refresh() => IsDark = DetectDark();
+
+    private static bool DetectDark()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(PersonalizeKey);
+
+            // 0 = dark, 1 = light. Absent means the machine has never been switched, i.e. light.
+            return key?.GetValue("AppsUseLightTheme") is int light && light == 0;
+        }
+        catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException)
+        {
+            return false;
+        }
+    }
+
+    public static Color Background => IsDark ? Color.FromArgb(32, 33, 36) : Color.FromArgb(245, 246, 248);
+
+    /// <summary>Panels and inputs, one step raised from the window background.</summary>
+    public static Color Surface => IsDark ? Color.FromArgb(43, 45, 49) : Color.White;
+
+    public static Color Border => IsDark ? Color.FromArgb(58, 61, 66) : Color.FromArgb(216, 219, 224);
+
+    public static Color Text => IsDark ? Color.FromArgb(232, 234, 237) : Color.FromArgb(31, 34, 38);
+
+    public static Color SubtleText => IsDark ? Color.FromArgb(154, 160, 166) : Color.FromArgb(95, 99, 104);
+
+    /// <summary>The gold from the tray star, used for the primary action.</summary>
+    public static Color Accent => IsDark ? Color.FromArgb(255, 214, 102) : Color.FromArgb(179, 132, 20);
+
+    public static Color AccentText => IsDark ? Color.FromArgb(28, 30, 34) : Color.White;
+
+    /// <summary>Backdrop behind the screenshot preview — always dark so the image reads well.</summary>
+    public static Color PreviewBackdrop => Color.FromArgb(24, 24, 28);
+
+    public static Font UiFont { get; } = CreateFont("Segoe UI Variable Text", "Segoe UI", 9.75f);
+
+    public static Font HeadingFont { get; } = CreateFont("Segoe UI Variable Display", "Segoe UI", 13f, FontStyle.Regular);
+
+    public static Font MonoFont { get; } = CreateFont("Cascadia Mono", "Consolas", 9.5f);
+
+    /// <summary>
+    /// Falls back when a font is missing. Requesting an unavailable family silently substitutes
+    /// something arbitrary, so the preferred name is verified before use.
+    /// </summary>
+    private static Font CreateFont(string preferred, string fallback, float size, FontStyle style = FontStyle.Regular)
+    {
+        try
+        {
+            var font = new Font(preferred, size, style);
+            return font.Name.Equals(preferred, StringComparison.OrdinalIgnoreCase)
+                ? font
+                : new Font(fallback, size, style);
+        }
+        catch (ArgumentException)
+        {
+            return new Font(fallback, size, style);
+        }
+    }
+
+    /// <summary>Styles a button as the primary action.</summary>
+    public static void MakePrimary(Button button)
+    {
+        button.FlatStyle = FlatStyle.Flat;
+        button.BackColor = Accent;
+        button.ForeColor = AccentText;
+        button.FlatAppearance.BorderSize = 0;
+        button.Font = new Font(UiFont, FontStyle.Bold);
+        button.Cursor = Cursors.Hand;
+    }
+
+    /// <summary>Styles a button as a secondary action.</summary>
+    public static void MakeSecondary(Button button)
+    {
+        button.FlatStyle = FlatStyle.Flat;
+        button.BackColor = Surface;
+        button.ForeColor = Text;
+        button.FlatAppearance.BorderColor = Border;
+        button.FlatAppearance.BorderSize = 1;
+        button.Font = UiFont;
+        button.Cursor = Cursors.Hand;
+    }
+
+    /// <summary>
+    /// Applies the palette to a control and everything under it.
+    ///
+    /// <para>Walks the tree rather than relying on inheritance because several WinForms controls —
+    /// TextBox, ComboBox, ListBox — do not inherit BackColor from their parent, and would otherwise
+    /// stay white inside a dark window.</para>
+    /// </summary>
+    public static void Apply(Control root)
+    {
+        ArgumentNullException.ThrowIfNull(root);
+
+        root.BackColor = root is Form ? Background : root.BackColor;
+        root.ForeColor = Text;
+
+        foreach (Control child in root.Controls)
+        {
+            switch (child)
+            {
+                case TextBox textBox:
+                    textBox.BackColor = Surface;
+                    textBox.ForeColor = Text;
+                    textBox.BorderStyle = BorderStyle.FixedSingle;
+                    textBox.Font = textBox.Multiline && textBox.ReadOnly ? MonoFont : UiFont;
+                    break;
+
+                case ComboBox combo:
+                    // Changing FlatStyle recreates the handle and clears Text, which silently blanked
+                    // the stored process name every time the dialog was themed. Preserve and restore.
+                    var editableText = combo.Text;
+
+                    combo.BackColor = Surface;
+                    combo.ForeColor = Text;
+                    combo.FlatStyle = FlatStyle.Flat;
+                    combo.Font = UiFont;
+
+                    if (combo.DropDownStyle != ComboBoxStyle.DropDownList && combo.Text != editableText)
+                    {
+                        combo.Text = editableText;
+                    }
+
+                    break;
+
+                case ListBox list:
+                    list.BackColor = Surface;
+                    list.ForeColor = Text;
+                    list.BorderStyle = BorderStyle.FixedSingle;
+                    list.Font = UiFont;
+                    break;
+
+                case Button button:
+                    if (button.BackColor != Accent)
+                    {
+                        MakeSecondary(button);
+                    }
+
+                    break;
+
+                case CheckBox check:
+                    check.ForeColor = Text;
+                    check.Font = UiFont;
+                    check.BackColor = Color.Transparent;
+
+                    // FlatStyle.Flat makes the CheckBox draw its own box from these colours. Left
+                    // on the default System style it uses the light-mode glyph, so a ticked box on
+                    // a dark background renders as an empty white square — it looked unchecked
+                    // while the setting was actually on.
+                    check.FlatStyle = FlatStyle.Flat;
+                    check.FlatAppearance.BorderColor = Border;
+                    check.FlatAppearance.CheckedBackColor = Accent;
+                    break;
+
+                case Label label:
+                    label.ForeColor = label.Font.Size > 11 ? Text : SubtleText;
+                    label.BackColor = Color.Transparent;
+                    break;
+
+                case PictureBox picture:
+                    picture.BackColor = PreviewBackdrop;
+                    break;
+
+                case Panel or TableLayoutPanel or FlowLayoutPanel:
+                    child.BackColor = Background;
+                    child.ForeColor = Text;
+                    break;
+            }
+
+            if (child.HasChildren)
+            {
+                Apply(child);
+            }
+        }
+    }
+}

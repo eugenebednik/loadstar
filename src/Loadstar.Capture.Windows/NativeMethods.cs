@@ -21,8 +21,13 @@ namespace Loadstar.Capture.Windows;
 /// <para>Window discovery does not appear here at all — it goes through
 /// <see cref="System.Diagnostics.Process"/>, which needs no P/Invoke of ours and no handle to the
 /// game process.</para>
+///
+/// <para>These are <c>DllImport</c> rather than the newer source-generated <c>LibraryImport</c>
+/// for one reason: <c>LibraryImport</c> requires <c>AllowUnsafeBlocks</c> across the whole
+/// project. All five signatures are blittable, so the generated marshalling would be identical,
+/// and "this assembly contains no unsafe code" is a claim worth more here than a generator.</para>
 /// </summary>
-internal static partial class NativeMethods
+internal static class NativeMethods
 {
     // ---------------------------------------------------------------------
     // combase.dll — WinRT activation.
@@ -33,14 +38,14 @@ internal static partial class NativeMethods
     // WinUI and OBS-style capture app takes.
     // ---------------------------------------------------------------------
 
-    [LibraryImport("combase.dll", StringMarshalling = StringMarshalling.Utf16)]
-    internal static partial int WindowsCreateString(string sourceString, int length, out IntPtr hstring);
+    [DllImport("combase.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    internal static extern int WindowsCreateString(string sourceString, int length, out IntPtr hstring);
 
-    [LibraryImport("combase.dll")]
-    internal static partial int WindowsDeleteString(IntPtr hstring);
+    [DllImport("combase.dll", ExactSpelling = true)]
+    internal static extern int WindowsDeleteString(IntPtr hstring);
 
-    [LibraryImport("combase.dll")]
-    internal static partial int RoGetActivationFactory(IntPtr activatableClassId, in Guid iid, out IntPtr factory);
+    [DllImport("combase.dll", ExactSpelling = true)]
+    internal static extern int RoGetActivationFactory(IntPtr activatableClassId, in Guid iid, out IntPtr factory);
 
     // ---------------------------------------------------------------------
     // d3d11.dll — our own rendering device.
@@ -59,8 +64,8 @@ internal static partial class NativeMethods
 
     internal const uint D3D11_SDK_VERSION = 7;
 
-    [LibraryImport("d3d11.dll")]
-    internal static partial int D3D11CreateDevice(
+    [DllImport("d3d11.dll", ExactSpelling = true)]
+    internal static extern int D3D11CreateDevice(
         IntPtr adapter,
         int driverType,
         IntPtr software,
@@ -72,8 +77,8 @@ internal static partial class NativeMethods
         out int featureLevel,
         out IntPtr immediateContext);
 
-    [LibraryImport("d3d11.dll")]
-    internal static partial int CreateDirect3D11DeviceFromDXGIDevice(IntPtr dxgiDevice, out IntPtr graphicsDevice);
+    [DllImport("d3d11.dll", ExactSpelling = true)]
+    internal static extern int CreateDirect3D11DeviceFromDXGIDevice(IntPtr dxgiDevice, out IntPtr graphicsDevice);
 
     // ---------------------------------------------------------------------
     // COM interfaces. Not P/Invokes — vtable calls on objects the OS hands us.
