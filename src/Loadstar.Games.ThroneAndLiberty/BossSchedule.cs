@@ -140,10 +140,22 @@ public sealed class BossSchedule
             var time = slot.TryGetProperty("time", out var t) ? t.GetString() : null;
             var type = slot.TryGetProperty("type", out var ty) ? ty.GetString() : null;
 
-            if (TimeSpan.TryParse(time, out var parsed))
+            if (!TimeSpan.TryParse(time, out var parsed))
             {
-                slots.Add(new ScheduleSlot(parsed, type ?? "Unknown"));
+                continue;
             }
+
+            // Optional, and absent means weekly — every existing slot keeps its behaviour untouched.
+            var period = slot.TryGetProperty("everyDays", out var e) && e.TryGetInt32(out var days) && days > 0
+                ? days
+                : 7;
+
+            DateOnly? anchor = slot.TryGetProperty("since", out var since)
+                && DateOnly.TryParse(since.GetString(), out var parsedAnchor)
+                    ? parsedAnchor
+                    : null;
+
+            slots.Add(new ScheduleSlot(parsed, type ?? "Unknown", period, anchor));
         }
 
         return slots.OrderBy(s => s.TimeOfDay).ToArray();
@@ -182,7 +194,11 @@ public sealed class BossSchedule
 
         // Walk from yesterday so a slot that is "today" in server time but still ahead of the
         // player's instant is not skipped near a timezone boundary.
-        for (var dayOffset = -1; dayOffset <= 8 && spawns.Count < count; dayOffset++)
+        // Sixteen days, not eight. A biweekly slot can sit up to 13 days out — an off-week Sunday
+        // with siege as the only entry produced NOTHING, because the walk ended before the next
+        // occurrence. Caught by a test rather than in the field. The bound must exceed the longest
+        // recurrence period in the data, so raising a period means raising this too.
+        for (var dayOffset = -1; dayOffset <= 16 && spawns.Count < count; dayOffset++)
         {
             var date = localNow.Date.AddDays(dayOffset);
 
@@ -190,6 +206,11 @@ public sealed class BossSchedule
             // yields no slots rather than falling back to some default set.
             foreach (var slot in region.SlotsFor(date.DayOfWeek))
             {
+                if (!slot.OccursOn(DateOnly.FromDateTime(date)))
+                {
+                    continue;
+                }
+
                 var instant = ToInstant(date, slot.TimeOfDay, serverZone);
 
                 if (instant is not { } spawnAt || spawnAt <= now)
@@ -255,7 +276,36 @@ public sealed class BossSchedule
             Week.TryGetValue(day, out var slots) ? slots : [];
     }
 
-    private sealed record ScheduleSlot(TimeSpan TimeOfDay, string EventType);
+    /// <summary>
+    /// One scheduled slot. <paramref name="PeriodDays"/> and <paramref name="Anchor"/> exist because
+    /// not everything repeats weekly: siege runs on ALTERNATING Sundays, observed in a live client on
+    /// 09/08 and 23/08 with 16/08 empty. A weekday-keyed schedule alone would promise a siege every
+    /// Sunday and be wrong every other week.
+    /// </summary>
+    private sealed record ScheduleSlot(
+        TimeSpan TimeOfDay,
+        string EventType,
+        int PeriodDays = 7,
+        DateOnly? Anchor = null)
+    {
+        /// <summary>
+        /// Whether this slot happens on <paramref name="date"/>. Weekly slots (no anchor) always do —
+        /// the weekday lookup has already decided that. Anchored slots must land on the cycle.
+        /// </summary>
+        public bool OccursOn(DateOnly date)
+        {
+            if (Anchor is not { } anchor || PeriodDays <= 1)
+            {
+                return true;
+            }
+
+            // Positive modulo, so a date BEFORE the anchor still resolves correctly rather than
+            // producing a negative remainder that never equals zero.
+            var delta = date.DayNumber - anchor.DayNumber;
+
+            return ((delta % PeriodDays) + PeriodDays) % PeriodDays == 0;
+        }
+    }
 }
 
 public sealed record BossSpawn(DateTimeOffset SpawnsAt, string EventType, TimeSpan Until)

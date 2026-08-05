@@ -175,4 +175,93 @@ public sealed class BossScheduleTests
         Assert.Equal("42s", spawn.Countdown(TimeSpan.FromSeconds(42)));
         Assert.Equal("now", spawn.Countdown(TimeSpan.Zero));
     }
+    /// <summary>
+    /// Siege runs on ALTERNATING Sundays, so a weekday-keyed slot alone is wrong every other week.
+    /// Observed in a live client: 09/08 siege, 16/08 empty, 23/08 siege.
+    /// </summary>
+    [Fact]
+    public void BiweeklySlotSkipsTheOffWeek()
+    {
+        const string json = """
+            {
+              "resetHourLocal": 3,
+              "regions": {
+                "Americas": {
+                  "defaultTimeZone": "America/Los_Angeles",
+                  "weeklySlots": {
+                    "Sunday": [
+                      { "time": "18:00", "type": "Siege", "everyDays": 14, "since": "2026-08-09" }
+                    ]
+                  }
+                }
+              }
+            }
+            """;
+
+        var schedule = BossSchedule.Parse(json);
+        var zone = TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles");
+
+        // From the Saturday before each Sunday, the next spawn should land on the ON weeks only.
+        var fromAug8 = schedule.NextSpawns(
+            new DateTimeOffset(2026, 8, 8, 12, 0, 0, zone.GetUtcOffset(new DateTime(2026, 8, 8))),
+            "Americas", zone, count: 3);
+
+        Assert.NotEmpty(fromAug8);
+
+        var dates = fromAug8.Select(s => TimeZoneInfo.ConvertTime(s.SpawnsAt, zone).Date).ToList();
+
+        // 09/08 and 23/08 are siege; 16/08 must not appear at all.
+        Assert.Contains(new DateTime(2026, 8, 9), dates);
+        Assert.DoesNotContain(new DateTime(2026, 8, 16), dates);
+        Assert.Contains(new DateTime(2026, 8, 23), dates);
+        Assert.All(fromAug8, s => Assert.True(s.IsSiege));
+    }
+
+    /// <summary>A slot with no recurrence fields stays weekly — every existing entry must be unaffected.</summary>
+    [Fact]
+    public void SlotWithoutRecurrenceStaysWeekly()
+    {
+        const string json = """
+            {
+              "resetHourLocal": 3,
+              "regions": {
+                "Americas": {
+                  "defaultTimeZone": "America/Los_Angeles",
+                  "weeklySlots": { "Sunday": [ { "time": "18:00", "type": "Siege" } ] }
+                }
+              }
+            }
+            """;
+
+        var schedule = BossSchedule.Parse(json);
+        var zone = TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles");
+
+        var spawns = schedule.NextSpawns(
+            new DateTimeOffset(2026, 8, 8, 12, 0, 0, zone.GetUtcOffset(new DateTime(2026, 8, 8))),
+            "Americas", zone, count: 3);
+
+        var dates = spawns.Select(s => TimeZoneInfo.ConvertTime(s.SpawnsAt, zone).Date).ToList();
+
+        // Consecutive Sundays, because nothing asked for a longer cycle.
+        Assert.Contains(new DateTime(2026, 8, 9), dates);
+        Assert.Contains(new DateTime(2026, 8, 16), dates);
+    }
+
+    [Fact]
+    public void BundledAmericasSiegeIsBiweekly()
+    {
+        var schedule = BossSchedule.LoadBundled();
+        var zone = TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles");
+
+        var sieges = schedule
+            .NextSpawns(
+                new DateTimeOffset(2026, 8, 8, 12, 0, 0, zone.GetUtcOffset(new DateTime(2026, 8, 8))),
+                "Americas", zone, count: 40)
+            .Where(s => s.IsSiege)
+            .Select(s => TimeZoneInfo.ConvertTime(s.SpawnsAt, zone).Date)
+            .ToList();
+
+        Assert.Contains(new DateTime(2026, 8, 9), sieges);
+        Assert.DoesNotContain(new DateTime(2026, 8, 16), sieges);
+    }
 }

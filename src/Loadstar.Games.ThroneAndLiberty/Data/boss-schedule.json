@@ -133,7 +133,20 @@
         "dailySlots below it is the older questlog-derived guess, kept only so the difference is",
         "visible: questlog claims field bosses at 19:00/22:00, the client shows 17:00/20:00.",
         "weeklySlots wins wherever both are present."
-      ],
+      ,
+      "",
+      "SIEGE IS BIWEEKLY, not weekly. Verified from a live client 2026-08-05 by reading the map's",
+      "Daily tab across 21 days: 09/08 Sun 18:00 siege, 16/08 Sun EMPTY, 23/08 Sun 18:00 siege. Hence",
+      "everyDays 14 with an anchor -- a weekday-keyed slot alone would promise a siege every Sunday and",
+      "be wrong every other week.",
+      "",
+      "Field bosses ARE weekly, re-confirmed over the same 21 days: 17:00 and 20:00 on Tue, Wed, Fri",
+      "and Sat; Thursday and Monday carry nothing at all. Slot COMPOSITION rotates (one boss at 17:00",
+      "and five at 20:00 one week, inverted the next) but the times do not, and the timer needs only",
+      "the times.",
+      "",
+      "The panel is explicitly labelled LOCAL TIME in the client, which is why slot times are read in",
+      "the player's own zone and the server timezone setting was removed."],
       "weeklySlots": {
         "Monday": [],
         "Tuesday": [
@@ -154,7 +167,7 @@
           { "time": "20:00", "type": "FieldBosses" }
         ],
         "Sunday": [
-          { "time": "18:00", "type": "Siege" }
+          { "time": "18:00", "type": "Siege", "everyDays": 14, "since": "2026-08-09" }
         ]
       },
       "dailySlots": [
