@@ -47,12 +47,18 @@ No .NET install needed — the installer ships a self-contained build.
 
 ## Install
 
-**[Download the latest installer](../../releases/download/latest-build/Loadstar-x64.msi)** and run it.
+**[Download the latest release](../../releases/latest/download/Loadstar-x64.msi)** and run it. That
+link always resolves to the newest stable version, so it stays correct as new ones ship.
 
-That link always points at the most recent build of `main`. Installers are also published per
-language — English, Russian, Ukrainian, Spanish, German, French, Japanese, Korean and Traditional
-Chinese — on the [latest-build release](../../releases/tag/latest-build); pick
-`Loadstar-<version>-x64-<lang>.msi`. Pinned versions live under [Releases](../../releases).
+Installers are published per language — English, Russian, Ukrainian, Spanish, German, French,
+Japanese, Korean and Traditional Chinese. Pick `Loadstar-<version>-x64-<lang>.msi` from the
+[latest release](../../releases/latest); every version is kept under [Releases](../../releases).
+
+There is also a **[rolling build of `main`](../../releases/download/latest-build/Loadstar-x64.msi)**,
+rebuilt on every push and marked as a prerelease. It is useful for trying a fix before it is
+released, and it carries a higher version number than the current release by design — so if you
+install it and later want to go back to a stable version, uninstall it first, or the installer will
+correctly refuse to downgrade.
 
 Everything needed to run is inside the MSI. There is no separate .NET download, and no prerequisite
 beyond the Windows version above.

@@ -9,7 +9,20 @@
     <InvariantGlobalization>false</InvariantGlobalization>
     <Product>Loadstar</Product>
     <Company>Loadstar</Company>
-    <Version>0.1.0</Version>
+    <!--
+      The in-development version, and it must always be a MINOR ahead of the last release.
+
+      CI builds rolling installers from `main` as <major>.<minor>.<run_number>, so this line owns a
+      whole patch range that fills up as pushes land. A release tag then takes the NEXT minor and
+      this value moves one further on, which keeps two rules true at once: every rolling build
+      outranks the release before it, and no tag can ever collide with a rolling build that already
+      shipped under the same number. MSI upgrade detection is the reason it matters — two different
+      installers carrying one version is the failure that has no clean recovery on the user's machine.
+
+      So: released 0.2.0 from the 0.1.x line, development moves to 0.3.x, the next release is v0.4.0.
+      Releases land on even minors purely as a consequence; nothing depends on the parity itself.
+    -->
+    <Version>0.3.0</Version>
   </PropertyGroup>
 
 </Project>

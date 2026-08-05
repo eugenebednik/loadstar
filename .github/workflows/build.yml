@@ -73,6 +73,11 @@ jobs:
       # A tag build takes its version from the tag. Everything else takes the base from
       # Directory.Build.props with the run number as the patch, so each main build has a distinct,
       # increasing version — which is what makes MSI upgrade detection work between them.
+      #
+      # Which means a release tag must NOT reuse a minor the rolling builds have been filling: those
+      # numbers are already on users' machines, and two different installers sharing one version is
+      # not recoverable cleanly. Tag the next minor up and bump Directory.Build.props one further —
+      # the reasoning is written out in full beside that property.
       - name: Resolve version
         id: version
         shell: pwsh
