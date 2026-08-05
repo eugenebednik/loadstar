@@ -60,6 +60,14 @@ internal sealed class SettingsWindow : ThemedForm
     /// the stored model with the default before it has even been read.
     /// </summary>
     private bool _loadingProvider;
+
+    /// <summary>
+    /// Suppresses the server-changed handler while code populates the server list, for the same
+    /// reason as <see cref="_loadingProvider"/>: the handler exists to react to a person picking a
+    /// server, and firing it during a programmatic refresh overwrites the timezone they may have
+    /// just typed.
+    /// </summary>
+    private bool _loadingServers;
     private readonly ThemedCheckBox _consent = new() { Text = Strings.Get("settings.consent") };
     private readonly ComboBox _language = new() { Width = 240, DropDownStyle = ComboBoxStyle.DropDownList };
 
@@ -535,30 +543,65 @@ internal sealed class SettingsWindow : ThemedForm
     /// Fetches the live server list. Servers are added and merged over time, so a hardcoded list
     /// would eventually offer one that no longer exists.
     /// </summary>
+    /// <summary>
+    /// Fetches the server list in the background and merges it into the combo.
+    ///
+    /// <para><b>This must not restore stored values.</b> It once ended by calling
+    /// <see cref="RestoreStoredValues"/>, to undo the damage that repopulating the combo does. But
+    /// this method completes seconds after the dialog opened — long after the user started typing —
+    /// and re-applying saved settings at that moment silently reverted whatever they had just
+    /// changed. A consent checkbox ticked during the fetch un-ticked itself when it landed, which
+    /// reads as a dead control rather than as a race.</para>
+    ///
+    /// <para>So the blast radius is now the server list and nothing else: the handler is suppressed
+    /// while the items are replaced, and the region label is refreshed directly. Every other control
+    /// belongs to the user from the moment the dialog is visible.</para>
+    /// </summary>
     private async Task LoadServersAsync()
     {
         var previous = _store.Load().Game.ServerName;
 
+        // Before the await, not after: a fetch with no feedback looks like nothing happened, and
+        // then a failure message arrives out of nowhere and appears to belong to whatever the user
+        // clicked in the meantime.
+        _status.Text = "Loading the server list…";
+        _status.ForeColor = Theme.SubtleText;
+
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+            // Short enough that failing offline is quick news. The old 20s meant the user sat with
+            // no answer, did something else, and got the bad news attached to that instead.
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
             var servers = await new QuestlogClient(http).GetServersAsync(CancellationToken.None);
 
-            _server.Items.Clear();
+            _loadingServers = true;
 
-            foreach (var server in servers.OrderBy(s => s.RegionSlug).ThenBy(s => s.Name))
+            try
             {
-                _server.Items.Add(server);
+                _server.Items.Clear();
+
+                foreach (var server in servers.OrderBy(s => s.RegionSlug).ThenBy(s => s.Name))
+                {
+                    _server.Items.Add(server);
+                }
+
+                // Whatever is in the combo now wins over the stored name, because the user may have
+                // picked a different server while this was in flight.
+                _server.SelectedItem =
+                    servers.FirstOrDefault(s => s.Name.Equals(_server.Text, StringComparison.OrdinalIgnoreCase))
+                    ?? servers.FirstOrDefault(s => s.Name.Equals(previous, StringComparison.OrdinalIgnoreCase));
+            }
+            finally
+            {
+                _loadingServers = false;
             }
 
-            _server.SelectedItem = servers.FirstOrDefault(s =>
-                s.Name.Equals(previous, StringComparison.OrdinalIgnoreCase));
+            if (_server.SelectedItem is GameServer selected)
+            {
+                _regionLabel.Text = selected.RegionSlug;
+            }
 
             _status.Text = $"{servers.Count} servers across {servers.Select(s => s.RegionSlug).Distinct().Count()} regions.";
-
-            // This completes AFTER OnShown, so it is the last thing to touch the UI — and it was
-            // clobbering the restored values. Re-apply them here rather than racing it.
-            RestoreStoredValues();
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
@@ -570,7 +613,7 @@ internal sealed class SettingsWindow : ThemedForm
 
     private void OnServerChanged()
     {
-        if (_server.SelectedItem is not GameServer server)
+        if (_loadingServers || _server.SelectedItem is not GameServer server)
         {
             return;
         }
@@ -781,19 +824,46 @@ internal sealed class SettingsWindow : ThemedForm
         if (languageChanged)
         {
             Strings.Use(language);
-
-            // Windows already built these controls with the old strings, and rebuilding every open
-            // window mid-save is more machinery than this is worth. Saying so is honest; silently
-            // half-translating the UI is not.
-            MessageBox.Show(
-                this,
-                "The interface language will apply the next time Loadstar starts.",
-                "Loadstar",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+            OfferRestartForLanguage();
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Offers to restart now, which is what actually applies a new interface language.
+    ///
+    /// <para>Asking rather than restarting outright: the app may be mid-session with advice on screen
+    /// that only exists in memory, and taking that away without warning to change a label is a poor
+    /// trade. Declining is a real choice, so the message says what declining means.</para>
+    ///
+    /// <para>The language is already saved by the time this runs, so every path here ends with the
+    /// setting persisted — the only question is when the windows catch up.</para>
+    /// </summary>
+    private void OfferRestartForLanguage()
+    {
+        var answer = MessageBox.Show(
+            this,
+            Strings.Get("settings.language.restart"),
+            "Loadstar",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question,
+            MessageBoxDefaultButton.Button1);
+
+        if (answer != DialogResult.Yes)
+        {
+            return;
+        }
+
+        if (!Program.Restart())
+        {
+            MessageBox.Show(
+                this,
+                Strings.Get("settings.language.restartFailed"),
+                "Loadstar",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
     }
 
     /// <summary>Wraps a language for the picker so it shows its own name rather than the enum.</summary>

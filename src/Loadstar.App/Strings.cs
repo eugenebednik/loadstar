@@ -64,6 +64,8 @@ internal static class Strings
             ["settings.bossOverlay"] = "Show countdown overlay on screen",
             ["tray.ready"] = "Loadstar is ready",
             ["tray.pressToCapture"] = "Press {0} any time to capture the screen and ask a question.",
+            ["settings.language.restart"] = "The interface language has been saved. Restart Loadstar now to apply it?\n\nAnything currently on screen will be cleared. Choose No and it will apply the next time you start.",
+            ["settings.language.restartFailed"] = "Loadstar could not restart itself. The new language will apply the next time you start it.",
         },
 
         [AppLanguage.Russian] = new()
@@ -97,6 +99,8 @@ internal static class Strings
             ["settings.bossOverlay"] = "Показывать таймер поверх экрана",
             ["tray.ready"] = "Loadstar готов",
             ["tray.pressToCapture"] = "Нажмите {0}, чтобы сделать снимок экрана и задать вопрос.",
+            ["settings.language.restart"] = "Язык интерфейса сохранён. Перезапустить Loadstar сейчас, чтобы применить его?\n\nВсё, что сейчас на экране, будет очищено. Если выбрать «Нет», язык применится при следующем запуске.",
+            ["settings.language.restartFailed"] = "Не удалось перезапустить Loadstar. Новый язык применится при следующем запуске.",
         },
 
         [AppLanguage.Ukrainian] = new()
@@ -130,6 +134,8 @@ internal static class Strings
             ["settings.bossOverlay"] = "Показувати таймер поверх екрана",
             ["tray.ready"] = "Loadstar готовий",
             ["tray.pressToCapture"] = "Натисніть {0}, щоб зробити знімок екрана та поставити запитання.",
+            ["settings.language.restart"] = "Мову інтерфейсу збережено. Перезапустити Loadstar зараз, щоб її застосувати?\n\nУсе, що зараз на екрані, буде очищено. Якщо вибрати «Ні», мова застосується під час наступного запуску.",
+            ["settings.language.restartFailed"] = "Не вдалося перезапустити Loadstar. Нову мову буде застосовано під час наступного запуску.",
         },
 
         [AppLanguage.Spanish] = new()
@@ -163,6 +169,8 @@ internal static class Strings
             ["settings.bossOverlay"] = "Mostrar cuenta atrás en pantalla",
             ["tray.ready"] = "Loadstar está listo",
             ["tray.pressToCapture"] = "Pulsa {0} en cualquier momento para capturar la pantalla y preguntar.",
+            ["settings.language.restart"] = "Se ha guardado el idioma de la interfaz. ¿Reiniciar Loadstar ahora para aplicarlo?\n\nSe borrará todo lo que haya en pantalla. Si eliges No, se aplicará el próximo inicio.",
+            ["settings.language.restartFailed"] = "Loadstar no pudo reiniciarse. El nuevo idioma se aplicará el próximo inicio.",
         },
 
         [AppLanguage.German] = new()
@@ -196,6 +204,8 @@ internal static class Strings
             ["settings.bossOverlay"] = "Countdown auf dem Bildschirm anzeigen",
             ["tray.ready"] = "Loadstar ist bereit",
             ["tray.pressToCapture"] = "Drücke jederzeit {0}, um den Bildschirm aufzunehmen und zu fragen.",
+            ["settings.language.restart"] = "Die Sprache der Benutzeroberfläche wurde gespeichert. Loadstar jetzt neu starten, um sie anzuwenden?\n\nAlles, was gerade angezeigt wird, wird verworfen. Bei „Nein“ gilt sie ab dem nächsten Start.",
+            ["settings.language.restartFailed"] = "Loadstar konnte nicht neu gestartet werden. Die neue Sprache gilt ab dem nächsten Start.",
         },
 
         [AppLanguage.French] = new()
@@ -229,6 +239,8 @@ internal static class Strings
             ["settings.bossOverlay"] = "Afficher le compte à rebours à l'écran",
             ["tray.ready"] = "Loadstar est prêt",
             ["tray.pressToCapture"] = "Appuyez sur {0} à tout moment pour capturer l'écran et poser une question.",
+            ["settings.language.restart"] = "La langue de l'interface a été enregistrée. Redémarrer Loadstar maintenant pour l'appliquer ?\n\nTout ce qui est affiché sera effacé. Si vous choisissez Non, elle s'appliquera au prochain démarrage.",
+            ["settings.language.restartFailed"] = "Loadstar n'a pas pu redémarrer. La nouvelle langue s'appliquera au prochain démarrage.",
         },
 
         [AppLanguage.Japanese] = new()
@@ -262,6 +274,8 @@ internal static class Strings
             ["settings.bossOverlay"] = "画面にカウントダウンを表示",
             ["tray.ready"] = "Loadstar の準備ができました",
             ["tray.pressToCapture"] = "{0} を押すと画面をキャプチャして質問できます。",
+            ["settings.language.restart"] = "インターフェースの言語を保存しました。今すぐ Loadstar を再起動して適用しますか？\n\n画面に表示されている内容は消去されます。「いいえ」を選ぶと、次回の起動時に適用されます。",
+            ["settings.language.restartFailed"] = "Loadstar を再起動できませんでした。新しい言語は次回の起動時に適用されます。",
         },
 
         [AppLanguage.Korean] = new()
@@ -295,6 +309,8 @@ internal static class Strings
             ["settings.bossOverlay"] = "화면에 카운트다운 표시",
             ["tray.ready"] = "Loadstar 준비 완료",
             ["tray.pressToCapture"] = "언제든지 {0} 키를 눌러 화면을 캡처하고 질문하세요.",
+            ["settings.language.restart"] = "인터페이스 언어를 저장했습니다. 지금 Loadstar를 다시 시작하여 적용할까요?\n\n화면에 표시된 내용은 지워집니다. '아니요'를 선택하면 다음 실행 시 적용됩니다.",
+            ["settings.language.restartFailed"] = "Loadstar를 다시 시작할 수 없습니다. 새 언어는 다음 실행 시 적용됩니다.",
         },
 
         [AppLanguage.ChineseTraditional] = new()
@@ -328,6 +344,8 @@ internal static class Strings
             ["settings.bossOverlay"] = "在畫面上顯示倒數計時",
             ["tray.ready"] = "Loadstar 已就緒",
             ["tray.pressToCapture"] = "隨時按下 {0} 即可擷取畫面並提問。",
+            ["settings.language.restart"] = "介面語言已儲存。要立即重新啟動 Loadstar 以套用嗎？\n\n畫面上顯示的內容將會清除。若選擇「否」，將於下次啟動時套用。",
+            ["settings.language.restartFailed"] = "無法重新啟動 Loadstar。新語言將於下次啟動時套用。",
         },
     };
 }

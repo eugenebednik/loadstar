@@ -12,8 +12,13 @@ namespace Loadstar.App;
 /// <c>UserPaint | AllPaintingInWmPaint</c> and produced exactly the corruption the tab control had:
 /// CheckBox also wraps a native control, and taking painting away from it left stale form pixels
 /// showing through — the dialog's Cancel button bled through the checkbox row. The same mistake,
-/// made twice. <c>Appearance.Button</c> with flat colours gets an unambiguous on/off look using only
-/// properties the control supports.</para>
+/// made twice. <c>FlatStyle.Flat</c> gets an unambiguous look using only properties the control
+/// supports, which is the whole point of this class.</para>
+///
+/// <para>Note the constructor keeps <c>Appearance.Normal</c> deliberately — see the comment there.
+/// This paragraph used to claim the fix was <c>Appearance.Button</c>, which the code has never done;
+/// a stale comment recommending the opposite of the code is worse than no comment, particularly in a
+/// file that exists to stop someone repeating a mistake.</para>
 /// </summary>
 internal sealed class ThemedCheckBox : CheckBox
 {

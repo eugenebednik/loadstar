@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace Loadstar.App;
 
 internal static class Program
@@ -7,6 +9,12 @@ internal static class Program
     /// registration silently fails — leaving the user with a running app whose shortcut does nothing.
     /// </summary>
     private static Mutex? _instance;
+
+    /// <summary>
+    /// Tells a freshly launched copy to wait for the copy that spawned it to exit. See
+    /// <see cref="Restart"/> — the argument carries the outgoing process id.
+    /// </summary>
+    private const string AwaitExitFlag = "--await-exit";
 
     [STAThread]
     private static void Main(string[] args)
@@ -26,6 +34,12 @@ internal static class Program
             Application.Run(standalone);
             return;
         }
+
+        // A restart launches the replacement before the outgoing copy has finished shutting down, so
+        // the replacement waits here. Both things it needs are still held by the old process: the
+        // mutex below, and the global hotkey — and losing the hotkey race is the quiet failure, since
+        // the app would start looking perfectly healthy with a shortcut that does nothing.
+        WaitForPredecessor(args);
 
         _instance = new Mutex(initiallyOwned: true, "Loadstar.SingleInstance", out var isFirst);
 
@@ -55,6 +69,74 @@ internal static class Program
 
         // No main form: the app's lifetime is the message loop, ended by the tray's Exit item.
         Application.Run();
+    }
+
+    /// <summary>
+    /// Blocks until the process named by <see cref="AwaitExitFlag"/> has exited, so the replacement
+    /// does not race the copy it is replacing for the mutex or the hotkey.
+    ///
+    /// <para>Bounded rather than indefinite: if the outgoing process wedges on shutdown, starting
+    /// anyway is a better outcome than a replacement that never appears and leaves the user thinking
+    /// the app is gone.</para>
+    /// </summary>
+    private static void WaitForPredecessor(string[] args)
+    {
+        var index = Array.FindIndex(args, a => a.Equals(AwaitExitFlag, StringComparison.OrdinalIgnoreCase));
+
+        if (index < 0 || index + 1 >= args.Length || !int.TryParse(args[index + 1], out var pid))
+        {
+            return;
+        }
+
+        try
+        {
+            using var predecessor = Process.GetProcessById(pid);
+            predecessor.WaitForExit(milliseconds: 10_000);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            // Already gone, which is exactly what we were waiting for.
+        }
+    }
+
+    /// <summary>
+    /// Relaunches Loadstar and ends this copy, so a new interface language applies immediately.
+    ///
+    /// <para>WinForms builds a control's text once, when it is constructed, so changing the culture
+    /// afterwards leaves every open window in the old language. Rebuilding them all would mean every
+    /// window growing a re-localise path and every future window remembering to have one — a
+    /// restart is a fraction of the machinery and cannot be half-done.</para>
+    ///
+    /// <para>The replacement is told to wait for this process id before it does anything, because it
+    /// otherwise races the copy it is replacing; see <see cref="WaitForPredecessor"/>.</para>
+    /// </summary>
+    /// <returns><c>false</c> if the replacement could not be started, leaving this copy running.</returns>
+    public static bool Restart()
+    {
+        // Null under single-file publish in some hosts, and there is nothing to relaunch without it.
+        var executable = Environment.ProcessPath;
+
+        if (string.IsNullOrEmpty(executable))
+        {
+            return false;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(executable)
+            {
+                Arguments = $"{AwaitExitFlag} {Environment.ProcessId}",
+                UseShellExecute = false,
+                WorkingDirectory = Path.GetDirectoryName(executable) ?? string.Empty,
+            });
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException)
+        {
+            return false;
+        }
+
+        Application.Exit();
+        return true;
     }
 
     /// <summary>
