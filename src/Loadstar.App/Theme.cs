@@ -165,13 +165,18 @@ internal static class Theme
                     check.Font = UiFont;
                     check.BackColor = Color.Transparent;
 
-                    // FlatStyle.Flat makes the CheckBox draw its own box from these colours. Left
-                    // on the default System style it uses the light-mode glyph, so a ticked box on
-                    // a dark background renders as an empty white square — it looked unchecked
-                    // while the setting was actually on.
-                    check.FlatStyle = FlatStyle.Flat;
-                    check.FlatAppearance.BorderColor = Border;
-                    check.FlatAppearance.CheckedBackColor = Accent;
+                    // FLATSTYLE IS DELIBERATELY NOT SET. It used to be forced to Flat here, on the
+                    // theory that a Flat box draws itself from these colours while the system glyph
+                    // would render a ticked box as an empty white square.
+                    //
+                    // Flat is worse: it draws no tick AT ALL. Proven rather than argued — with a
+                    // stored value of true the box rendered pixel-identical to a stored value of
+                    // false, and clicking appeared to do nothing because Checked was toggling
+                    // invisibly. It was reported three times as "the checkbox is uncheckable".
+                    //
+                    // This line also silently defeated every fix attempted in ThemedCheckBox's own
+                    // constructor, because Apply runs from OnShown — after construction. If a
+                    // checkbox ever looks wrong again, look here FIRST, not at the control.
                     break;
 
                 case Label label:

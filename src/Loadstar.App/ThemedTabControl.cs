@@ -20,6 +20,7 @@ internal sealed class ThemedTabControl : TabControl
     public ThemedTabControl()
     {
         DrawMode = TabDrawMode.OwnerDrawFixed;
+
         SizeMode = TabSizeMode.Fixed;
         ItemSize = new Size(150, 32);
     }
@@ -32,6 +33,19 @@ internal sealed class ThemedTabControl : TabControl
 
         using var background = new SolidBrush(selected ? Theme.Surface : Theme.Background);
         e.Graphics.FillRectangle(background, bounds);
+
+        // The strip to the right of the last tab gets no draw event of its own, so the native control
+        // paints it — a white band across the top of a dark dialog. Filling it from here keeps the fix
+        // inside the one override this class already has; adding OnPaintBackground is what previously
+        // caused both tab pages to composite in the same place.
+        //
+        // TabSizeMode.FillToRight was tried first and made it worse: the tabs shrank to their text
+        // instead of expanding, leaving even more bare strip.
+        if (e.Index == TabCount - 1 && bounds.Right < Width)
+        {
+            using var strip = new SolidBrush(Theme.Background);
+            e.Graphics.FillRectangle(strip, bounds.Right, bounds.Top, Width - bounds.Right, bounds.Height);
+        }
 
         // A bright underline marks the active tab, which reads clearly without needing a border
         // treatment that would fight the flat styling elsewhere.
