@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  MSI packaging for Loadstar.
+
+  Two decisions worth explaining, because both are load-bearing:
+
+  1. SELF-CONTAINED, NOT SINGLE-FILE. The publish output is the whole .NET runtime alongside the
+     app — roughly two hundred files — so someone who installs this needs nothing else, which is
+     the point. Single-file would be tidier to package but extracts native libraries to a temp
+     directory at startup, and this app loads WinRT projections (Windows.Graphics.Capture) plus
+     System.Drawing; that is exactly the combination where extraction gets awkward. Harvesting a
+     folder is the boring, reliable option.
+
+  2. The <Files> element harvests that folder automatically. WiX v3 needed heat.exe and a generated
+     fragment checked into the repo, which rots the moment a dependency changes. v4+ globs at build
+     time, so a new transitive DLL is packaged without anyone remembering to re-harvest.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <Package Name="Loadstar"
+           Manufacturer="Eugene Bednik"
+           Version="$(Version)"
+           UpgradeCode="6f3c0f9a-6c4e-4a3f-9a2b-7d1e5c8b4a10"
+           Scope="perMachine"
+           Compressed="yes"
+           InstallerVersion="500">
+
+    <!--
+      Fixed for the lifetime of the product. Changing it would make future installers unable to see
+      this one, so upgrades would silently install side by side instead of replacing.
+    -->
+    <SummaryInformation Description="Loadstar — AI game companion overlay" />
+
+    <!-- Replaces an older install in place, and refuses to go backwards with a clear message
+         rather than the default one, which reads like a bug. -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Loadstar is already installed. Uninstall it first if you want to go back to [ProductVersion]." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- ProgramFiles6432Folder resolves to the 64-bit Program Files on x64, which is what a
+         win-x64 build belongs in. -->
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="Loadstar" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ShortcutFolder" Name="Loadstar" />
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="Loadstar" Level="1">
+      <ComponentGroupRef Id="ApplicationFiles" />
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+
+    <!-- Lets the user choose the install location; the alternative (WixUI_Minimal) gives them no
+         say at all, which is a poor fit for something that lives in the tray permanently. -->
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <WixVariable Id="WixUILicenseRtf" Value="!(bindpath.installer)\License.rtf" />
+
+    <Property Id="ARPPRODUCTICON" Value="LoadstarIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/eugenebednik/loadstar" />
+    <Icon Id="LoadstarIcon" SourceFile="!(bindpath.publish)\Loadstar.exe" />
+
+  </Package>
+
+  <Fragment>
+    <!--
+      PublishDir comes in as a bind path so this file has no knowledge of where the build put
+      things. Everything under it is packaged, which is the whole runtime plus the app.
+    -->
+    <ComponentGroup Id="ApplicationFiles" Directory="INSTALLFOLDER">
+      <Files Include="!(bindpath.publish)\**" />
+    </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <!--
+      A shortcut component needs a KeyPath, and a registry value is the conventional choice because
+      the shortcut itself cannot be one. HKLM rather than HKCU: this is a perMachine install, and an
+      HKCU keypath in a perMachine package is the classic cause of ICE38 and of repair loops when a
+      second user logs in.
+    -->
+    <Component Id="StartMenuShortcut" Directory="ShortcutFolder" Guid="1c9a7e42-3b58-4d6f-8e21-9f4c7a0d5b83">
+      <Shortcut Id="LoadstarStartMenu"
+                Name="Loadstar"
+                Description="AI game companion overlay"
+                Target="[INSTALLFOLDER]Loadstar.exe"
+                WorkingDirectory="INSTALLFOLDER" />
+
+      <RemoveFolder Id="RemoveShortcutFolder" Directory="ShortcutFolder" On="uninstall" />
+
+      <RegistryValue Root="HKLM"
+                     Key="Software\Loadstar"
+                     Name="Installed"
+                     Type="integer"
+                     Value="1"
+                     KeyPath="yes" />
+    </Component>
+  </Fragment>
+
+</Wix>

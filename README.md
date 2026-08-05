@@ -36,20 +36,41 @@ Early. See the [project board](../../projects) for what's landed and what's next
 
 ## Requirements
 
-- Windows 10 version 1903 (build 18362) or newer — required for the capture API
+- Windows 10 version 2004 (build 19041) or newer — required for the capture API. Windows
+  Graphics Capture itself dates to 1903, but capturing without a UI thread to pump needs
+  `Direct3D11CaptureFramePool.CreateFreeThreaded`, which arrived in 2004.
 - The game running in **borderless windowed** mode (see [Fullscreen](#fullscreen) below)
-- An API key for Anthropic (Claude Sonnet or Opus) or OpenAI
+- An API key for **Anthropic**, **OpenAI**, or **Google Gemini** — pick the provider in Settings.
+  Gemini has a free tier, so it is the one that works without a billing account.
 
 No .NET install needed — the installer ships a self-contained build.
 
 ## Install
 
-Grab the latest `LoadstarSetup.exe` from [Releases](../../releases) and run it.
+**[Download the latest installer](../../releases/download/latest-build/Loadstar-x64.msi)** and run it.
+
+That link always points at the most recent build of `main`. Installers are also published per
+language — English, Russian, Ukrainian, Spanish, German, French, Japanese, Korean and Traditional
+Chinese — on the [latest-build release](../../releases/tag/latest-build); pick
+`Loadstar-<version>-x64-<lang>.msi`. Pinned versions live under [Releases](../../releases).
+
+Everything needed to run is inside the MSI. There is no separate .NET download, and no prerequisite
+beyond the Windows version above.
 
 To build from source:
 
 ```bash
 dotnet publish src/Loadstar.App -c Release -r win-x64 --self-contained
+```
+
+To build the installer locally, which needs the WiX CLI:
+
+```bash
+dotnet tool install --global wix --version 5.0.2
+wix extension add --global WixToolset.UI.wixext/5.0.2
+wix build installer/Loadstar.wxs -arch x64 -culture en-US -define Version=0.1.0 \
+  -bindpath "publish=$PWD/publish" -bindpath "installer=$PWD/installer" \
+  -ext WixToolset.UI.wixext -out artifacts/Loadstar-x64.msi
 ```
 
 ## Before it can help you: expand the currency bar

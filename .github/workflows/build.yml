@@ -1,0 +1,251 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  DOTNET_NOLOGO: 'true'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+  # WiX and its UI extension must be the same version, and a wildcard like `5.*` is rejected by
+  # `wix extension add` even though `dotnet tool install` accepts it. Pinned, and pinned together.
+  WIX_VERSION: '5.0.2'
+
+jobs:
+  # Gate. The anti-cheat posture scanner lives in this suite, and it is the one check that must
+  # never be bypassed — shipping an injected DLL or a ReadProcessMemory call gets users banned.
+  # Packaging and release both depend on this job, so a posture violation cannot reach a download.
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      # Keyed on project files since the repo has no lock file: a dependency bump edits a csproj,
+      # which changes the key.
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore
+
+      # TreatWarningsAsErrors is on in Directory.Build.props, so this fails on a warning too.
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test --configuration Release --no-build --verbosity normal
+
+  package:
+    needs: test
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      # A tag build takes its version from the tag. Everything else takes the base from
+      # Directory.Build.props with the run number as the patch, so each main build has a distinct,
+      # increasing version — which is what makes MSI upgrade detection work between them.
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          $base = ([xml](Get-Content Directory.Build.props)).Project.PropertyGroup.Version
+          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+            $version = $env:GITHUB_REF -replace '^refs/tags/v', ''
+          } else {
+            $parts = $base.Split('.')
+            $version = "$($parts[0]).$($parts[1]).${{ github.run_number }}"
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "Packaging version $version"
+
+      # Self-contained so whoever installs this needs nothing else on the machine — no runtime to
+      # download, no version mismatch. Deliberately NOT single-file: the app loads WinRT projections
+      # for Windows.Graphics.Capture, and single-file extraction of native assets is the wrong place
+      # to discover a problem. Trimming is off for the same reason — WinForms and the WinRT
+      # projections are reflection-heavy, so a trimmed build fails at runtime, not at build time.
+      - name: Publish self-contained
+        shell: pwsh
+        run: |
+          dotnet publish src/Loadstar.App/Loadstar.App.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=false `
+            -p:PublishTrimmed=false `
+            -p:Version=${{ steps.version.outputs.version }} `
+            --output publish
+
+      - name: Verify publish
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem publish -Recurse -File
+          $mb = [math]::Round(($files | Measure-Object Length -Sum).Sum / 1MB, 1)
+          Write-Host "$($files.Count) files, $mb MB"
+          if (-not (Test-Path publish/Loadstar.exe)) {
+            throw "publish/Loadstar.exe is missing — the MSI would install nothing runnable."
+          }
+
+      - name: Install WiX
+        run: dotnet tool install --global wix --version ${{ env.WIX_VERSION }}
+
+      # WixUI_InstallDir lives in the UI extension, not the core toolset.
+      - name: Add WiX UI extension
+        run: wix extension add --global WixToolset.UI.wixext/${{ env.WIX_VERSION }}
+
+      # One MSI per language, matching the set the app itself supports. The installer UI strings come
+      # from the WiX UI extension's own localisations, so each of these is a genuinely localised
+      # installer rather than an English one with a different filename.
+      #
+      # Bind paths are NAMED (`name=path`). An unnamed `-bindpath publish` does not satisfy
+      # `!(bindpath.publish)` and fails with a confusing "zero files harvested" warning followed by
+      # a missing-file error.
+      - name: Build MSIs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          $version = "${{ steps.version.outputs.version }}"
+          $cultures = @{
+            'en-US' = 'en'; 'ru-RU' = 'ru'; 'uk-UA' = 'uk'; 'es-ES' = 'es'; 'de-DE' = 'de'
+            'fr-FR' = 'fr'; 'ja-JP' = 'ja'; 'ko-KR' = 'ko'; 'zh-TW' = 'zh'
+          }
+
+          foreach ($culture in $cultures.Keys | Sort-Object) {
+            $suffix = $cultures[$culture]
+            $out = "artifacts/Loadstar-$version-x64-$suffix.msi"
+
+            Write-Host "::group::$culture"
+            wix build installer/Loadstar.wxs `
+              -arch x64 `
+              -culture $culture `
+              -define Version=$version `
+              -bindpath "publish=$PWD/publish" `
+              -bindpath "installer=$PWD/installer" `
+              -ext WixToolset.UI.wixext `
+              -out $out
+            Write-Host "::endgroup::"
+
+            if (-not (Test-Path $out)) { throw "MSI build failed for $culture" }
+          }
+
+          # A stable, version-less copy so the rolling download link never changes.
+          Copy-Item "artifacts/Loadstar-$version-x64-en.msi" "artifacts/Loadstar-x64.msi"
+
+      - name: Verify MSIs
+        shell: pwsh
+        run: |
+          $msis = Get-ChildItem artifacts/*.msi
+          foreach ($msi in $msis) {
+            $mb = [math]::Round($msi.Length / 1MB, 1)
+            Write-Host "$($msi.Name) — $mb MB"
+            # A self-contained .NET desktop app compresses to tens of megabytes. Anything small means
+            # the file harvest silently packaged nothing, which would install then fail to launch.
+            if ($msi.Length -lt 20MB) {
+              throw "$($msi.Name) is only $mb MB — the file harvest probably picked up nothing."
+            }
+          }
+          Write-Host "$($msis.Count) installers verified"
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: Loadstar-installers-${{ steps.version.outputs.version }}
+          path: artifacts/*.msi
+          if-no-files-found: error
+
+      # The raw folder too, for anyone who would rather not run an installer — and it is the quickest
+      # way to try a build without touching the machine's installed state.
+      - name: Upload portable build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Loadstar-portable-${{ steps.version.outputs.version }}
+          path: publish/
+          if-no-files-found: error
+
+  # Rolling download for main. Workflow artifacts need a GitHub login and expire after 90 days, so
+  # they are no good as a "give people the latest build" link. A release asset is public, permanent
+  # and unauthenticated. The `latest-build` tag is moved on every push, which keeps this URL stable:
+  #
+  #   https://github.com/eugenebednik/loadstar/releases/download/latest-build/Loadstar-x64.msi
+  #
+  # Marked prerelease so it never displaces a real tagged version on the repo's Releases page.
+  rolling:
+    needs: package
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Loadstar-installers-*
+          merge-multiple: true
+          path: artifacts
+
+      - name: Update rolling release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-build
+          name: Latest build (${{ needs.package.outputs.version }})
+          prerelease: true
+          # Replaces the previous assets rather than accumulating them.
+          files: artifacts/*.msi
+          body: |
+            Automatic build of `main` — version **${{ needs.package.outputs.version }}**
+            (commit ${{ github.sha }}).
+
+            **Download:** [Loadstar-x64.msi](https://github.com/${{ github.repository }}/releases/download/latest-build/Loadstar-x64.msi)
+            — English installer, or pick your language from the assets below.
+
+            Everything needed to run is included; there is no separate .NET download.
+
+            This tag moves with every push to `main`, so it is not a stable version. For a pinned
+            release, use a `v*` tag.
+
+  release:
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Loadstar-installers-*
+          merge-multiple: true
+          path: artifacts
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.msi
+          generate_release_notes: true
+          draft: false
