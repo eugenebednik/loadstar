@@ -29,7 +29,7 @@ public sealed partial class QuestlogClient
         {
             _http.DefaultRequestHeaders.Add(
                 "User-Agent",
-                "Loadstar/0.1 (+https://github.com/loadstar/loadstar)");
+                "Loadstar/0.1 (+https://github.com/eugenebednik/loadstar)");
         }
     }
 

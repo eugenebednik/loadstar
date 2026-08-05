@@ -1,0 +1,8 @@
+# GitHub Pages configuration for docs/, published at https://eugenebednik.github.io/loadstar/
+#
+# This exists so the privacy policy has a stable, ordinary web URL. A link to a Markdown file inside
+# a git repository is a fine thing to read but a poor thing to put on a form that asks for a privacy
+# policy URL — it renders as source in some contexts and moves if the file is ever relocated.
+title: Loadstar
+description: AI game companion overlay for Windows. Reads the screen, never touches the game.
+theme: jekyll-theme-primer

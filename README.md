@@ -133,6 +133,10 @@ Everything lives in Settings, and everything is editable:
 Your API key is never sent anywhere except the provider you chose. Screenshots go to that
 provider and nowhere else. Loadstar has no backend.
 
+Full detail — what is captured, what leaves your machine, what is stored and where — is in the
+**[privacy policy](https://eugenebednik.github.io/loadstar/privacy)**
+([source](docs/privacy.md)).
+
 ## Fullscreen
 
 A non-injecting overlay cannot draw over a game in **exclusive fullscreen** — that's a
