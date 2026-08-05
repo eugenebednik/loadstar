@@ -264,4 +264,41 @@ public sealed class BossScheduleTests
         Assert.Contains(new DateTime(2026, 8, 9), sieges);
         Assert.DoesNotContain(new DateTime(2026, 8, 16), sieges);
     }
+    /// <summary>
+    /// One slot, several bosses — the client shows five icons at 20:00. Names win over the generic
+    /// label; an empty or absent list falls back to "Field Bosses" rather than inventing one.
+    /// </summary>
+    [Fact]
+    public void SlotCanNameSeveralBossesAndFallsBackWhenItDoesNot()
+    {
+        const string json = """
+            {
+              "resetHourLocal": 3,
+              "regions": {
+                "Americas": {
+                  "defaultTimeZone": "America/Los_Angeles",
+                  "weeklySlots": {
+                    "Wednesday": [
+                      { "time": "17:00", "type": "FieldBosses", "bosses": ["Cordy", "Deluzhnoa"] },
+                      { "time": "20:00", "type": "FieldBosses" }
+                    ]
+                  }
+                }
+              }
+            }
+            """;
+
+        var zone = TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles");
+        var spawns = BossSchedule.Parse(json).NextSpawns(
+            new DateTimeOffset(2026, 8, 5, 8, 0, 0, zone.GetUtcOffset(new DateTime(2026, 8, 5))),
+            "Americas", zone, count: 2);
+
+        Assert.Equal(2, spawns.Count);
+
+        Assert.Equal(["Cordy", "Deluzhnoa"], spawns[0].Names);
+        Assert.Equal("Cordy, Deluzhnoa", spawns[0].DisplayName);
+
+        Assert.Empty(spawns[1].Names);
+        Assert.Equal("Field Bosses", spawns[1].DisplayName);
+    }
 }

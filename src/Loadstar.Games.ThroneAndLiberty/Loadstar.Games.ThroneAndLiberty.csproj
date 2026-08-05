@@ -7,10 +7,13 @@
     <ProjectReference Include="..\Loadstar.Core\Loadstar.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <!-- Embedded so the schedule travels with the assembly. It is still editable data rather than
-         constants — a patch that changes the rotation is a file edit and a rebuild, not a code
-         change. -->
-    <EmbeddedResource Include="Data\boss-schedule.json" />
+    <!-- Embedded from docs/, which is exactly what GitHub Pages publishes. ONE copy of the file: the
+         app fetches it from the site at runtime and carries these same bytes as the offline fallback.
+         A second copy under Data/ would drift, and a schedule stale in one place but current in
+         another is worse than one that is uniformly old. LogicalName is explicit because LoadBundled
+         finds the resource by name, and a linked file does not get the name the folder would imply. -->
+    <EmbeddedResource Include="..\..\docs\boss-schedule.json"
+                      LogicalName="Loadstar.Games.ThroneAndLiberty.Data.boss-schedule.json" />
     <!-- The mechanics reference handed to the model. Markdown files rather than string constants so
          they stay readable and reviewable as documents — they are the product's game knowledge, and
          a diff on them should be legible to someone who plays the game. -->

@@ -155,7 +155,18 @@ public sealed class BossSchedule
                     ? parsedAnchor
                     : null;
 
-            slots.Add(new ScheduleSlot(parsed, type ?? "Unknown", period, anchor));
+            // A slot can hold SEVERAL bosses at one time — the client shows one icon at 17:00 and
+            // five at 20:00 — so this is a list, not a name. Empty or absent means "not yet
+            // identified", and the countdown falls back to the event type rather than inventing one.
+            var bosses = slot.TryGetProperty("bosses", out var b) && b.ValueKind == JsonValueKind.Array
+                ? b.EnumerateArray()
+                    .Select(n => n.GetString())
+                    .Where(n => !string.IsNullOrWhiteSpace(n))
+                    .Select(n => n!.Trim())
+                    .ToArray()
+                : [];
+
+            slots.Add(new ScheduleSlot(parsed, type ?? "Unknown", period, anchor, bosses));
         }
 
         return slots.OrderBy(s => s.TimeOfDay).ToArray();
@@ -218,7 +229,7 @@ public sealed class BossSchedule
                     continue;
                 }
 
-                spawns.Add(new BossSpawn(spawnAt, slot.EventType, spawnAt - now));
+                spawns.Add(new BossSpawn(spawnAt, slot.EventType, spawnAt - now, slot.Bosses));
 
                 if (spawns.Count >= count)
                 {
@@ -286,7 +297,8 @@ public sealed class BossSchedule
         TimeSpan TimeOfDay,
         string EventType,
         int PeriodDays = 7,
-        DateOnly? Anchor = null)
+        DateOnly? Anchor = null,
+        IReadOnlyList<string>? Bosses = null)
     {
         /// <summary>
         /// Whether this slot happens on <paramref name="date"/>. Weekly slots (no anchor) always do —
@@ -308,8 +320,15 @@ public sealed class BossSchedule
     }
 }
 
-public sealed record BossSpawn(DateTimeOffset SpawnsAt, string EventType, TimeSpan Until)
+public sealed record BossSpawn(
+    DateTimeOffset SpawnsAt,
+    string EventType,
+    TimeSpan Until,
+    IReadOnlyList<string>? Bosses = null)
 {
+    /// <summary>Named bosses for this slot, empty when the schedule has not identified them yet.</summary>
+    public IReadOnlyList<string> Names => Bosses ?? [];
+
     public bool IsFieldBoss => EventType.Equals("FieldBosses", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
@@ -318,8 +337,15 @@ public sealed record BossSpawn(DateTimeOffset SpawnsAt, string EventType, TimeSp
     /// </summary>
     public bool IsSiege => EventType.Equals("Siege", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>Short label for the overlay, e.g. "Field Bosses".</summary>
-    public string DisplayName => EventType switch
+    /// <summary>
+    /// Label for the overlay. Names when the schedule has them — several joined, since a slot can hold
+    /// more than one boss — and the generic event type when it does not. Never a guess: an unnamed slot
+    /// reads "Field Bosses", which is true, rather than a plausible boss that is not spawning.
+    /// </summary>
+    public string DisplayName => Names.Count > 0 ? string.Join(", ", Names) : GenericName;
+
+    /// <summary>The event-type label, used when no bosses are named.</summary>
+    public string GenericName => EventType switch
     {
         "FieldBosses" => "Field Bosses",
         "DynamicEvents" => "Dynamic Events",

@@ -146,7 +146,16 @@
       "the times.",
       "",
       "The panel is explicitly labelled LOCAL TIME in the client, which is why slot times are read in",
-      "the player's own zone and the server timezone setting was removed."],
+      "the player's own zone and the server timezone setting was removed.",
+      "",
+      "BOSS NAMES: each slot takes an optional \"bosses\" array, because ONE slot can hold several",
+      "bosses at the same time — the client shows one icon at 17:00 and five at 20:00. With names the",
+      "overlay reads \"20:00 - Ahzreil, Talus, Grand Aelon\"; with the array absent or empty it falls",
+      "back to \"Field Bosses\", which is true rather than a guess. Never put a name here that has not",
+      "been read off the client: a plausible wrong boss sends the player across the map for nothing.",
+      "",
+      "The names come from the map's Content Settings window, which lists every boss beside its icon",
+      "in text. That is a one-time user capture; the schedule icons are unlabelled on their own."],
       "weeklySlots": {
         "Monday": [],
         "Tuesday": [
@@ -154,8 +163,8 @@
           { "time": "20:00", "type": "FieldBosses" }
         ],
         "Wednesday": [
-          { "time": "17:00", "type": "FieldBosses" },
-          { "time": "20:00", "type": "FieldBosses" }
+          { "time": "17:00", "type": "FieldBosses", "bosses": [] },
+          { "time": "20:00", "type": "FieldBosses", "bosses": [] }
         ],
         "Thursday": [],
         "Friday": [

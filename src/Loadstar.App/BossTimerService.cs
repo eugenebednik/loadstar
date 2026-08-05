@@ -16,28 +16,57 @@ internal sealed class BossTimerService : IDisposable
     private readonly Func<LoadstarSettings> _settings;
     private readonly Action<LoadstarSettings> _save;
     private readonly Action<string, string> _notify;
-    private readonly BossSchedule _schedule;
+    // Not readonly: a background refresh swaps it in. Reference assignment is atomic and the timer
+    // reads it on the UI thread, so a swap is seen whole rather than half-applied.
+    private BossSchedule _schedule;
 
     /// <summary>Alerts already fired, keyed by spawn instant and offset, so each fires once.</summary>
     private readonly HashSet<string> _fired = [];
 
     private BossOverlay? _overlay;
 
+    private readonly string _directory;
+
     public BossTimerService(
         Func<LoadstarSettings> settings,
         Action<LoadstarSettings> save,
-        Action<string, string> notify)
+        Action<string, string> notify,
+        string directory)
     {
+        _directory = directory ?? throw new ArgumentNullException(nameof(directory));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _save = save ?? throw new ArgumentNullException(nameof(save));
         _notify = notify ?? throw new ArgumentNullException(nameof(notify));
-        _schedule = BossSchedule.LoadBundled();
+        // Cached download if there is one, bundled otherwise. Never a network call — a tray app that
+        // blocks on HTTP before showing a countdown is worse than one showing a slightly old count.
+        _schedule = ScheduleSource.Load(directory);
 
         _timer = new System.Windows.Forms.Timer { Interval = 1000 };
         _timer.Tick += (_, _) => Tick();
         _timer.Start();
 
         Apply();
+
+        // Fire and forget, deliberately: nothing downstream waits on it, and a failure leaves the
+        // schedule already loaded above in place.
+        _ = RefreshScheduleAsync();
+    }
+
+    /// <summary>
+    /// Pulls the published schedule in the background and swaps it in if it validates.
+    ///
+    /// <para>Silent on failure. Being offline is the normal state for a desktop app, and the bundled
+    /// copy is a correct schedule rather than a degraded one — it is only potentially stale.</para>
+    /// </summary>
+    private async Task RefreshScheduleAsync()
+    {
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        var fetched = await ScheduleSource.RefreshAsync(_directory, http, CancellationToken.None);
+
+        if (fetched is not null)
+        {
+            _schedule = fetched;
+        }
     }
 
     public BossSchedule Schedule => _schedule;

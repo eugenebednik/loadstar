@@ -70,7 +70,7 @@ internal sealed class TrayApplication : IDisposable
         _hotkeys = new HotkeyHost();
         RegisterHotkeys();
 
-        _bossTimer = new BossTimerService(_store.Load, _store.Save, (title, body) => ShowBalloon(title, body));
+        _bossTimer = new BossTimerService(_store.Load, _store.Save, (title, body) => ShowBalloon(title, body), _store.Directory);
 
         // Reminds the user of the hotkey when the game starts, the way an overlay does. Process
         // presence is a read-only shell query — no handle to the game is opened.
