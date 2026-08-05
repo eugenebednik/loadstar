@@ -163,8 +163,18 @@ internal sealed class BossTimerService : IDisposable
     /// Resolves an IANA id, falling back to the local zone. .NET 8 accepts IANA ids on Windows, but
     /// a hand-edited settings file can still carry something unresolvable.
     /// </summary>
-    public static TimeZoneInfo ResolveTimeZone(string id)
+    /// <summary>
+    /// Resolves the zone the schedule's times are read in. Empty or unrecognised means the machine's
+    /// own zone, which is the normal case — see <see cref="GameSettings.ServerTimeZone"/> for why this
+    /// is no longer something the player is asked.
+    /// </summary>
+    public static TimeZoneInfo ResolveTimeZone(string? id)
     {
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            return TimeZoneInfo.Local;
+        }
+
         try
         {
             return TimeZoneInfo.FindSystemTimeZoneById(id);

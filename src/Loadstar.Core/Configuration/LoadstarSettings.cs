@@ -115,7 +115,13 @@ public sealed record OverlaySettings
     public double Left { get; init; } = 24;
     public double Top { get; init; } = 24;
     public double Width { get; init; } = 380;
-    public double Opacity { get; init; } = 0.88;
+    /// <summary>
+    /// Overlay translucency. Lower than it looks like it should be, deliberately: this sits on top of
+    /// a game the player is actually looking at, and 0.88 read as a solid panel covering the corner of
+    /// the screen rather than as an overlay. Legibility still wins over subtlety, so it stops well
+    /// short of the 0.2 floor the overlay clamps to.
+    /// </summary>
+    public double Opacity { get; init; } = 0.72;
     public bool ClickThrough { get; init; } = true;
     public string ToggleHotkey { get; init; } = "Ctrl+Alt+L";
     public string CaptureHotkey { get; init; } = "Ctrl+Alt+S";
@@ -155,7 +161,22 @@ public sealed record GameSettings
     public string? ServerName { get; init; }
 
     /// <summary>IANA timezone for the player's server, used to resolve schedule times.</summary>
-    public string ServerTimeZone { get; init; } = "America/New_York";
+    /// <summary>
+    /// Timezone the schedule's slot times are expressed in. <b>Null means the player's own machine
+    /// zone, and that is the intended value</b> — this is deliberately not exposed in Settings.
+    ///
+    /// <para>Asking was a mistake, stated plainly by the product owner: nobody except the game knows
+    /// what timezone a server runs in, so the question has no answer the player can give reliably. It
+    /// produced exactly the failure that reasoning predicts — a stored <c>America/New_York</c> on a
+    /// Pacific machine, putting every countdown three hours out while still showing plausible evening
+    /// times. The old default here was that same string, so every install started wrong.</para>
+    ///
+    /// <para>Local is right because the slot times were read off a live client's own schedule panel,
+    /// and that panel renders in the player's local time — the numbers Loadstar counts down to are the
+    /// numbers the game shows. Kept as a settable field with no UI so a future correction is a config
+    /// edit rather than a code change.</para>
+    /// </summary>
+    public string? ServerTimeZone { get; init; }
 
     /// <summary>Minutes before a spawn to alert. Empty disables alerts.</summary>
     public IReadOnlyList<int> BossAlertMinutes { get; init; } = [15, 5];

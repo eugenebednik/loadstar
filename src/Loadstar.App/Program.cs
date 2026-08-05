@@ -26,6 +26,8 @@ internal static class Program
             ApplicationConfiguration.Initialize();
 
             var store = new Core.Configuration.SettingsStore();
+            Core.Diagnostics.Log.Initialize(store.Directory);
+            Core.Diagnostics.Log.Info("Started in --settings mode.");
             Strings.Use(store.Load().Language);
 
             // Application.Run, not ShowDialog: a modal dialog shown without a message loop never
@@ -56,6 +58,14 @@ internal static class Program
 
         ApplicationConfiguration.Initialize();
 
+        var settings = new Core.Configuration.SettingsStore();
+
+        // Before anything else that could fail. A log started after the first risky call is a log
+        // guaranteed to be missing the one entry someone needs.
+        Core.Diagnostics.Log.Initialize(settings.Directory);
+        Core.Diagnostics.Log.Info(
+            $"Loadstar {typeof(Program).Assembly.GetName().Version} starting on {Environment.OSVersion}.");
+
         // A tray app has no console and no window to print to, so an unhandled exception otherwise
         // surfaces as the bare .NET dialog with no clue where it came from. Log it somewhere the
         // user can find and quote.
@@ -63,7 +73,7 @@ internal static class Program
         AppDomain.CurrentDomain.UnhandledException += (_, e) => ReportCrash(e.ExceptionObject as Exception);
 
         // Language before any window is constructed, so nothing is built with the wrong strings.
-        Strings.Use(new Core.Configuration.SettingsStore().Load().Language);
+        Strings.Use(settings.Load().Language);
 
         using var tray = new TrayApplication();
 
@@ -149,6 +159,8 @@ internal static class Program
         {
             return;
         }
+
+        Core.Diagnostics.Log.Error("Unhandled exception", ex);
 
         var path = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

@@ -73,7 +73,6 @@ internal sealed class SettingsWindow : ThemedForm
 
     private readonly ComboBox _server = new() { Width = 240, DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly Label _regionLabel = new() { AutoSize = true };
-    private readonly ComboBox _timezone = new() { Width = 280, DropDownStyle = ComboBoxStyle.DropDown };
     private readonly TextBox _alertMinutes = new() { Width = 150 };
     private readonly ThemedCheckBox _bossOverlay = new() { Text = Strings.Get("settings.bossOverlay") };
     private readonly ThemedCheckBox _bossAlerts = new() { Text = Strings.Get("settings.bossAlerts") };
@@ -177,7 +176,6 @@ internal sealed class SettingsWindow : ThemedForm
         var settings = _store.Load();
 
         SetComboText(_process, settings.Capture.WindowProcessName);
-        SetComboText(_timezone, settings.Game.ServerTimeZone);
 
         // Provider first, then model: selecting the provider repopulates the model list, so the
         // reverse order sets a model into a list that is about to be replaced.
@@ -478,11 +476,6 @@ internal sealed class SettingsWindow : ThemedForm
         var page = new TabPage(Strings.Get("settings.bossTimer")) { BackColor = Theme.Surface, Padding = new Padding(0) };
         var grid = NewGrid();
 
-        foreach (var zone in TimeZoneInfo.GetSystemTimeZones())
-        {
-            _timezone.Items.Add(zone.Id);
-        }
-
         // Selecting a server sets the region, which is what actually picks the schedule.
         _server.SelectedIndexChanged += (_, _) => OnServerChanged();
 
@@ -527,7 +520,6 @@ internal sealed class SettingsWindow : ThemedForm
         Row(grid, Strings.Get("settings.server"), _server);
         Row(grid, string.Empty, refresh);
         Row(grid, Strings.Get("settings.region"), _regionLabel);
-        Row(grid, Strings.Get("settings.timezone"), _timezone);
         Row(grid, string.Empty, coverage);
         Row(grid, Strings.Get("settings.alertMinutes"), _alertMinutes);
         Row(grid, string.Empty, alertsHint);
@@ -618,15 +610,10 @@ internal sealed class SettingsWindow : ThemedForm
             return;
         }
 
+        // The region is all that is taken from the server now. Timezone used to be suggested here and
+        // is no longer asked at all — schedule times are read in the player's own zone, which is the
+        // zone the game's schedule panel displays them in.
         _regionLabel.Text = server.RegionSlug;
-
-        var suggested = BossSchedule.LoadBundled().DefaultTimeZone(server.RegionSlug);
-
-        if (!string.IsNullOrWhiteSpace(suggested) && string.IsNullOrWhiteSpace(_timezone.Text))
-        {
-            // A suggestion, not a fact: servers within a region do not all share a timezone.
-            _timezone.Text = suggested;
-        }
     }
 
     private void Populate()
@@ -690,7 +677,6 @@ internal sealed class SettingsWindow : ThemedForm
 
         _regionLabel.Text = settings.Game.Region;
         _regionLabel.ForeColor = Theme.SubtleText;
-        _timezone.Text = settings.Game.ServerTimeZone;
 
         if (!string.IsNullOrWhiteSpace(settings.Game.ServerName))
         {
@@ -786,7 +772,9 @@ internal sealed class SettingsWindow : ThemedForm
                 BuildUrl = string.IsNullOrWhiteSpace(_buildUrl.Text) ? null : _buildUrl.Text.Trim(),
                 ServerName = (_server.SelectedItem as GameServer)?.Name ?? settings.Game.ServerName,
                 Region = (_server.SelectedItem as GameServer)?.RegionSlug ?? settings.Game.Region,
-                ServerTimeZone = string.IsNullOrWhiteSpace(_timezone.Text) ? settings.Game.ServerTimeZone : _timezone.Text.Trim(),
+                // Passed through untouched. There is no UI for it any more, but an explicit value in
+                // the settings file stays an escape hatch and must not be erased by saving.
+                ServerTimeZone = settings.Game.ServerTimeZone,
                 BossAlertMinutes = alerts,
                 BossAlertsEnabled = _bossAlerts.Checked,
             },

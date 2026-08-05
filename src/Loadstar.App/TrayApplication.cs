@@ -294,11 +294,16 @@ internal sealed class TrayApplication : IDisposable
         // party receives it is exactly what the user should be told.
         ShowBalloon("Analysing…", $"Sending one screenshot to {providerInfo.DisplayName}.");
 
+        // Stage-by-stage, because "no answer appeared" spans five things that can fail and the log is
+        // only useful if it says which one did.
+        Core.Diagnostics.Log.Info($"Analyse: fetching build {settings.Game.BuildUrl}");
+
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         var character = await new QuestlogClient(http).GetCharacterAsync(settings.Game.BuildUrl, CancellationToken.None);
 
         if (character is null || character.Builds.Count == 0)
         {
+            Core.Diagnostics.Log.Warn($"Analyse: questlog returned no builds for {settings.Game.BuildUrl}");
             ShowBalloon("Build not found", $"questlog returned nothing for \"{settings.Game.BuildUrl}\".", ToolTipIcon.Warning);
             return;
         }
@@ -306,6 +311,12 @@ internal sealed class TrayApplication : IDisposable
         var target = character.Builds[0];
         var allocated = TlStats.MapAllocated(target.Attributes);
         var derived = await ComputeTargetsAsync(target, http);
+
+        Core.Diagnostics.Log.Info(
+            $"Analyse: build \"{target.Name}\", {allocated.Count} allocated stats, "
+            + $"targets {(derived is null ? "unavailable" : "computed")}. "
+            + $"Sending {frame.Png.Length / 1024}KB to {providerInfo.DisplayName} "
+            + $"as {AiProviderFactory.ResolveModel(provider, settings.Ai.Model)}.");
 
         using var client = AiProviderFactory.Create(provider, apiKey);
 
@@ -328,6 +339,29 @@ internal sealed class TrayApplication : IDisposable
                 MaxOutputTokens = 3000,
             },
             CancellationToken.None);
+
+        Core.Diagnostics.Log.Info(
+            $"Analyse: {providerInfo.DisplayName} replied with {response.Text?.Length ?? 0} chars.");
+
+        // A provider that returns an empty body is a real outcome — a safety refusal, a truncation, a
+        // model that answered with nothing. Left alone it renders as a blank window, which is
+        // indistinguishable from the app having done nothing at all.
+        if (string.IsNullOrWhiteSpace(response.Text))
+        {
+            Core.Diagnostics.Log.Warn("Analyse: provider returned an empty response.");
+
+            MessageBox.Show(
+                $"{providerInfo.DisplayName} accepted the screenshot but returned no text. This is "
+                + "usually a rate limit, an exhausted quota, or a response cut short."
+                + Environment.NewLine + Environment.NewLine
+                + $"Nothing is wrong with your settings — try again, and if it repeats, check your "
+                + $"{providerInfo.DisplayName} usage.",
+                "Loadstar — empty response",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+
+            return;
+        }
 
         var advice = AdviceParser.Parse(response.Text, DateTimeOffset.Now, response.Usage);
         var observed = TlObservationParser.Parse(response.Text);
@@ -452,17 +486,40 @@ internal sealed class TrayApplication : IDisposable
         _tray.ShowBalloonTip(4000);
     }
 
+    /// <summary>
+    /// Reports a failure the user was waiting on.
+    ///
+    /// <para>This used to show only a six-second balloon, and that produced the worst bug report this
+    /// project has had: a question asked, a screenshot taken, and no answer — because the failure went
+    /// to a notification Windows may suppress entirely, and nowhere else. The app knew what went wrong
+    /// and there was no way to find out.</para>
+    ///
+    /// <para>So now it logs first, then shows a dialog that stays until dismissed. A modal for a
+    /// background event would be wrong, but this only fires on an action the user explicitly started
+    /// and is standing there waiting for, and silence is the worse failure.</para>
+    /// </summary>
     public static void ReportError(string title, Exception ex)
     {
-        if (_errorSink is null)
+        Core.Diagnostics.Log.Error(title, ex);
+
+        var detail = ex.Message;
+
+        // Inner exceptions carry the real cause often enough to be worth surfacing: "One or more
+        // errors occurred" on its own tells the user nothing they can act on or report.
+        if (ex.InnerException is { } inner && !string.IsNullOrWhiteSpace(inner.Message))
         {
-            return;
+            detail += Environment.NewLine + Environment.NewLine + inner.Message;
         }
 
-        _errorSink.BalloonTipTitle = title;
-        _errorSink.BalloonTipText = ex.Message;
-        _errorSink.BalloonTipIcon = ToolTipIcon.Error;
-        _errorSink.ShowBalloonTip(6000);
+        var where = Core.Diagnostics.Log.Path is { } path
+            ? Environment.NewLine + Environment.NewLine + $"Details were written to:{Environment.NewLine}{path}"
+            : string.Empty;
+
+        MessageBox.Show(
+            $"{detail}{where}",
+            $"Loadstar — {title}",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Error);
     }
 
     public void Dispose()
