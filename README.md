@@ -57,6 +57,28 @@ Chinese — on the [latest-build release](../../releases/tag/latest-build); pick
 Everything needed to run is inside the MSI. There is no separate .NET download, and no prerequisite
 beyond the Windows version above.
 
+### Windows will warn you, and it should
+
+The installer is **not code-signed**. Windows shows a full-screen SmartScreen dialog —
+*"Windows protected your PC"* — with no visible Run button; it's behind **More info → Run anyway**.
+Your browser may separately warn that the file isn't commonly downloaded, and the elevation prompt
+after that reads **Unknown publisher**.
+
+That is the correct behaviour for an unsigned installer from a small project, and clicking through
+it is a real decision rather than a formality. Two things you can actually check:
+
+- **The download URL is on `github.com/eugenebednik/loadstar`.** There is no mirror, no alternate
+  channel, and no installer hosted anywhere else. Anything else claiming to be Loadstar isn't.
+- **Every installer is built by public CI from public source.** The
+  [workflow](.github/workflows/build.yml) builds and publishes a named commit, so what's inside the
+  MSI traces back to a diff you can read — which is a stronger guarantee than a signature, not a
+  weaker one.
+
+Signing needs a paid certificate renewed annually, and since 2023 the private key has to live on
+hardware or in a cloud HSM. So the warning is a funding problem, not a design decision. If that
+changes, this section disappears. How releases are produced and who authorizes them is documented in
+[docs/code-signing-policy.md](docs/code-signing-policy.md).
+
 To build from source:
 
 ```bash
