@@ -188,6 +188,15 @@ internal static class Theme
                     picture.BackColor = PreviewBackdrop;
                     break;
 
+                // Before the Panel case, which it would otherwise match. The pager owns its own
+                // colours, and its tab buttons are Buttons that must NOT be restyled as ordinary
+                // secondary buttons. Page contents still get themed; the pager's chrome is then put
+                // back. `continue` skips the generic recursion below, which is the whole point.
+                case ThemedPager pager:
+                    Apply(pager.Body);
+                    pager.ApplyTheme();
+                    continue;
+
                 case Panel or TableLayoutPanel or FlowLayoutPanel:
                     child.BackColor = Background;
                     child.ForeColor = Text;

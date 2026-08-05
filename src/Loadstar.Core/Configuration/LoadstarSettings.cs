@@ -31,10 +31,22 @@ public sealed record LoadstarSettings
 
 public sealed record AiSettings
 {
-    public AiProviderKind Provider { get; init; } = AiProviderKind.Anthropic;
+    /// <summary>
+    /// Google, because it is the only provider with a free tier.
+    ///
+    /// <para>This defaulted to Anthropic, which is the better model but a worse default: Anthropic and
+    /// OpenAI both bill per token from a prepaid balance and neither includes API access with a
+    /// consumer subscription. So a new user following the shortest path hit a provider they could not
+    /// use without first setting up billing — and the app cannot help them at all until they do.</para>
+    ///
+    /// <para>Gemini's free tier has rate limits and its requests may be used for training, both of
+    /// which the settings dialog states plainly. That is a trade the user can see and change; a
+    /// paywall on first run is not.</para>
+    /// </summary>
+    public AiProviderKind Provider { get; init; } = AiProviderKind.Google;
 
-    /// <summary>Model id. Defaults to the most capable Claude model.</summary>
-    public string Model { get; init; } = "claude-opus-5";
+    /// <summary>Model id. Must belong to <see cref="Provider"/> above, or the factory rejects it.</summary>
+    public string Model { get; init; } = "gemini-3.6-flash";
 
     /// <summary>Hard ceiling on spend. Analysis stops rather than silently costing more.</summary>
     public decimal MonthlyBudgetUsd { get; init; } = 10m;

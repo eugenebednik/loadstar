@@ -1,4 +1,6 @@
-﻿using Loadstar.Capture.Windows;
+﻿using System.Diagnostics;
+
+using Loadstar.Capture.Windows;
 using Loadstar.Core.Ai;
 using Loadstar.Core.Configuration;
 using Loadstar.Games.ThroneAndLiberty;
@@ -39,6 +41,19 @@ internal sealed class SettingsWindow : ThemedForm
     {
         AutoSize = true,
         MaximumSize = new Size(FieldWidth, 0),
+    };
+
+    /// <summary>
+    /// The provider's API-key page, as a real link rather than a URL printed in a label.
+    ///
+    /// <para>It used to be text inside <see cref="_billing"/>, which meant the one action the row
+    /// exists to prompt — go and get a key — required selecting the address by hand and pasting it
+    /// into a browser. A LinkLabel opens it with the system default browser instead.</para>
+    /// </summary>
+    private readonly LinkLabel _keyLink = new()
+    {
+        AutoSize = true,
+        LinkBehavior = LinkBehavior.HoverUnderline,
     };
 
     /// <summary>
@@ -86,7 +101,7 @@ internal sealed class SettingsWindow : ThemedForm
         _store = store;
         _secrets = secrets;
 
-        Text = "Loadstar — settings";
+        Text = $"Loadstar — {Strings.Get("settings.title")}";
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -99,17 +114,17 @@ internal sealed class SettingsWindow : ThemedForm
         // four rows to the General tab. A scrollbar is the thing being avoided — WinForms renders it
         // in the system light style regardless of theme, so growing the window is simpler than
         // fighting it, and the content genuinely fits at this height.
-        ClientSize = new Size(760, 900);
+        ClientSize = new Size(760, 950);
 
-        var tabs = new ThemedTabControl { Dock = DockStyle.Fill };
-        tabs.TabPages.Add(BuildGeneralTab());
-        tabs.TabPages.Add(BuildBossTimerTab());
+        var tabs = new ThemedPager { Dock = DockStyle.Fill };
+        tabs.AddPage(Strings.Get("settings.general"), BuildGeneralTab());
+        tabs.AddPage(Strings.Get("settings.bossTimer"), BuildBossTimerTab());
 
         var frame = new Panel { Dock = DockStyle.Fill, Padding = new Padding(16, 4, 16, 8) };
         frame.Controls.Add(tabs);
 
-        var save = new Button { Text = "Save", DialogResult = DialogResult.OK };
-        var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel };
+        var save = new Button { Text = Strings.Get("common.save"), DialogResult = DialogResult.OK };
+        var cancel = new Button { Text = Strings.Get("common.cancel"), DialogResult = DialogResult.Cancel };
 
         Theme.MakePrimary(save);
         Theme.MakeSecondary(cancel);
@@ -143,7 +158,9 @@ internal sealed class SettingsWindow : ThemedForm
 
         Controls.Add(frame);
         Controls.Add(CreateActionBar(save, cancel));
-        Controls.Add(CreateHeading("Settings"));
+        Controls.Add(CreateHeading(Strings.Get("settings.title")));
+
+        _keyLink.LinkClicked += (_, _) => OpenKeyPage();
 
         AcceptButton = save;
         CancelButton = cancel;
@@ -188,6 +205,14 @@ internal sealed class SettingsWindow : ThemedForm
 
         OnProviderChanged();
         SetComboText(_model, _modelChoices.GetValueOrDefault(settings.Ai.Provider, settings.Ai.Model));
+
+        // Theming recreates combo handles and clears the selection. For an editable combo the
+        // Text is put back; a DropDownList has no Text to put back, so this one has to be
+        // re-selected by value or it shows whatever index survived — observed showing Español and
+        // then Deutsch while the saved language was Russian. Saving from that state would have
+        // changed the user's language to one they never picked, which is why this is not cosmetic.
+        _language.SelectedItem = _language.Items.Cast<LanguageChoice>()
+            .FirstOrDefault(c => c.Language == settings.Language);
 
         _consent.Checked = settings.CaptureConsentGiven;
         _bossAlerts.Checked = settings.Game.BossAlertsEnabled;
@@ -277,9 +302,9 @@ internal sealed class SettingsWindow : ThemedForm
         grid.Controls.Add(control);
     }
 
-    private TabPage BuildGeneralTab()
+    private Panel BuildGeneralTab()
     {
-        var page = new TabPage(Strings.Get("settings.general")) { BackColor = Theme.Surface, Padding = new Padding(0) };
+        var page = new Panel { BackColor = Theme.Surface, Padding = new Padding(0) };
         var grid = NewGrid();
 
         var pick = new Button { Text = Strings.Get("settings.pickWindow"), AutoSize = true, Height = 30 };
@@ -293,8 +318,7 @@ internal sealed class SettingsWindow : ThemedForm
 
         var hint = new Label
         {
-            Text = "Pick the running game window, or its .exe. Loadstar stores the process name — "
-                + "matching on window title once selected a browser tab that mentioned the game.",
+            Text = Strings.Get("settings.hint.process"),
             AutoSize = false,
             Height = 52,
             Width = FieldWidth,
@@ -326,7 +350,7 @@ internal sealed class SettingsWindow : ThemedForm
 
         _provider.SelectedIndexChanged += (_, _) => OnProviderChanged();
 
-        var refreshModels = new Button { Text = "Refresh", AutoSize = true, Height = 30 };
+        var refreshModels = new Button { Text = Strings.Get("common.refresh"), AutoSize = true, Height = 30 };
         refreshModels.Click += (_, _) => _ = RefreshModelsAsync();
 
         var modelRow = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight };
@@ -335,10 +359,11 @@ internal sealed class SettingsWindow : ThemedForm
 
         _model.TextChanged += (_, _) => UpdateModelHint();
 
-        Row(grid, "AI provider", _provider);
+        Row(grid, Strings.Get("settings.provider"), _provider);
         Row(grid, Strings.Get("settings.model"), modelRow);
         Row(grid, Strings.Get("settings.apiKey"), _apiKey);
         Row(grid, string.Empty, _billing);
+        Row(grid, string.Empty, _keyLink);
         Row(grid, Strings.Get("settings.language"), _language);
         Row(grid, string.Empty, _consent);
         Row(grid, string.Empty, _status);
@@ -377,7 +402,7 @@ internal sealed class SettingsWindow : ThemedForm
 
         _apiKey.Clear();
         _apiKey.PlaceholderText = _secrets.HasKey(choice.Kind)
-            ? "(stored — type to replace)"
+            ? Strings.Get("settings.keyStored")
             : info.KeyPlaceholder;
 
         // Explicit line breaks rather than trusting the wrap: the URL must not be split across two
@@ -386,8 +411,16 @@ internal sealed class SettingsWindow : ThemedForm
             ? string.Empty
             : $"{Environment.NewLine}Press Refresh for this provider's current model list.";
 
-        _billing.Text = $"{info.BillingNote}{Environment.NewLine}Keys: {info.ConsoleUrl}{seedWarning}";
+        _billing.Text = $"{ProviderBillingNote(choice.Kind, info)}{seedWarning}";
         _billing.ForeColor = Theme.SubtleText;
+
+        // Text says what it does; the URL itself is the Tag, so the handler never has to re-derive
+        // which provider is selected at click time.
+        _keyLink.Text = Strings.Get("settings.getKey");
+        _keyLink.Tag = info.ConsoleUrl;
+        _keyLink.LinkColor = Theme.Accent;
+        _keyLink.ActiveLinkColor = Theme.Text;
+        _keyLink.VisitedLinkColor = Theme.Accent;
 
         UpdateModelHint();
     }
@@ -471,9 +504,9 @@ internal sealed class SettingsWindow : ThemedForm
         }
     }
 
-    private TabPage BuildBossTimerTab()
+    private Panel BuildBossTimerTab()
     {
-        var page = new TabPage(Strings.Get("settings.bossTimer")) { BackColor = Theme.Surface, Padding = new Padding(0) };
+        var page = new Panel { BackColor = Theme.Surface, Padding = new Padding(0) };
         var grid = NewGrid();
 
         // Selecting a server sets the region, which is what actually picks the schedule.
@@ -485,9 +518,7 @@ internal sealed class SettingsWindow : ThemedForm
         var coverage = new Label
         {
             Text =
-                "Times are computed locally from a bundled weekly schedule — no scraping, works "
-                + "offline. Only the Americas table is captured so far; other regions show nothing "
-                + "until their data is filled in.",
+                Strings.Get("settings.hint.coverage"),
             AutoSize = false,
             Height = 50,
             Width = FieldWidth,
@@ -497,8 +528,7 @@ internal sealed class SettingsWindow : ThemedForm
 
         var alertsHint = new Label
         {
-            Text = "Comma-separated, e.g. 15, 5. An alert that fires as the boss spawns is useless — "
-                + "travel time is the point.",
+            Text = Strings.Get("settings.hint.alertMinutes"),
             AutoSize = false,
             Height = 34,
             Width = FieldWidth,
@@ -508,8 +538,7 @@ internal sealed class SettingsWindow : ThemedForm
 
         var overlayHint = new Label
         {
-            Text = "The countdown starts movable — drag it where you want, then use "
-                + "\"Lock countdown position\" in the tray menu to make it click-through.",
+            Text = Strings.Get("settings.hint.overlay"),
             AutoSize = false,
             Height = 34,
             Width = FieldWidth,
@@ -854,6 +883,47 @@ internal sealed class SettingsWindow : ThemedForm
         }
     }
 
+    /// <summary>
+    /// Opens the selected provider's key page in the system default browser.
+    ///
+    /// <para><c>UseShellExecute</c> is required: without it .NET treats the URL as an executable path
+    /// and throws. Failure is reported rather than swallowed, because a link that does nothing when
+    /// clicked is the same class of bug as the checkbox that would not tick.</para>
+    /// </summary>
+    private void OpenKeyPage()
+    {
+        if (_keyLink.Tag is not string url || string.IsNullOrWhiteSpace(url))
+        {
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            Core.Diagnostics.Log.Error($"Could not open {url}", ex);
+            _status.Text = string.Format(Strings.Get("settings.openFailed"), url);
+        }
+    }
+
+    /// <summary>
+    /// The provider's billing note, translated when a translation exists.
+    ///
+    /// <para>These notes live in <see cref="AiCatalog"/> because they are provider facts rather than
+    /// interface chrome, and that library is not localised. So the UI looks for a translation first and
+    /// falls back to the catalogue's English. That keeps translations addable one language at a time
+    /// without a missing one rendering as a bare key.</para>
+    /// </summary>
+    private static string ProviderBillingNote(AiProviderKind kind, AiProviderInfo info)
+    {
+        var key = $"settings.billing.{kind.ToString().ToLowerInvariant()}";
+        var translated = Strings.Get(key);
+
+        return translated == key ? info.BillingNote : translated;
+    }
+
     /// <summary>Wraps a language for the picker so it shows its own name rather than the enum.</summary>
     private sealed record LanguageChoice(AppLanguage Language)
     {
@@ -887,7 +957,7 @@ internal sealed class WindowPicker : ThemedForm
 
     public WindowPicker(IReadOnlyList<GameWindow> windows)
     {
-        Text = "Pick the game window";
+        Text = Strings.Get("picker.title");
         StartPosition = FormStartPosition.CenterParent;
         ClientSize = new Size(640, 420);
         FormBorderStyle = FormBorderStyle.SizableToolWindow;
@@ -905,8 +975,8 @@ internal sealed class WindowPicker : ThemedForm
             _list.Items.Add(window);
         }
 
-        var ok = new Button { Text = "Select", DialogResult = DialogResult.OK };
-        var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel };
+        var ok = new Button { Text = Strings.Get("common.select"), DialogResult = DialogResult.OK };
+        var cancel = new Button { Text = Strings.Get("common.cancel"), DialogResult = DialogResult.Cancel };
 
         Theme.MakePrimary(ok);
         Theme.MakeSecondary(cancel);

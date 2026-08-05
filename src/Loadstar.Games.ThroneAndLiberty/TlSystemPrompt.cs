@@ -102,7 +102,24 @@ public static class TlSystemPrompt
             ? "Reply in the SAME LANGUAGE the player asked their question in. If they asked in " +
               "Russian, answer in Russian. If no question was asked, reply in the language of the " +
               "game client in the screenshot."
-            : $"Reply in {replyLanguage}, regardless of the language of the question or the client.";
+            : $"""
+              Reply in {replyLanguage}, regardless of the language of the question or the client.
+
+              **ENTIRELY in {replyLanguage} — this is the rule most often broken.** Every heading,
+              every bullet, every label, every sentence of explanation. Not a {replyLanguage} answer
+              with English section titles, not English terms with {replyLanguage} prose around them.
+              A player who picked {replyLanguage} picked it for the whole reply.
+
+              **The one exception is in-game proper nouns**, and it exists for a practical reason: the
+              player has to find the thing on their own screen, which may be in a different language
+              again. So keep item, boss, currency, set and stat names as they appear IN THE
+              SCREENSHOT, and put the {replyLanguage} meaning beside it the first time — for example
+              `Frigid Melody Hat ({replyLanguage} gloss)`. Translating a name the player cannot then
+              locate is worse than leaving it alone.
+
+              Everything that is not a name on their screen goes in {replyLanguage}: your reasoning,
+              your recommendations, your costs, your caveats.
+              """;
 
         return $"""
             # Languages — the screenshot, the question and your reply are three separate things

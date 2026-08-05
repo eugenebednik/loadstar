@@ -77,8 +77,13 @@ internal class ThemedForm : Form
 
         foreach (var button in buttons)
         {
-            button.Height = 32;
-            button.Width = Math.Max(button.Width, 96);
+            // AutoSize rather than a fixed width: "Save" fits 96px and "Сохранить" does not, and
+            // the truncation only shows up in whichever language nobody tested. GrowAndShrink with a
+            // minimum keeps short labels from producing a cramped button.
+            button.AutoSize = true;
+            button.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            button.Padding = new Padding(14, 0, 14, 0);
+            button.MinimumSize = new Size(96, 32);
             button.Margin = new Padding(6, 0, 0, 0);
             bar.Controls.Add(button);
         }
