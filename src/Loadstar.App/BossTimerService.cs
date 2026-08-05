@@ -42,6 +42,12 @@ internal sealed class BossTimerService : IDisposable
 
     public BossSchedule Schedule => _schedule;
 
+    /// <summary>
+    /// How far ahead the overlay is willing to look. A day: far enough to cover tonight and tomorrow
+    /// evening, short enough that an empty Thursday does not push next week into a live countdown.
+    /// </summary>
+    private static readonly TimeSpan Horizon = TimeSpan.FromHours(24);
+
     /// <summary>The next spawns for the configured server, or empty when it is not set up yet.</summary>
     public IReadOnlyList<BossSpawn> NextSpawns()
     {
@@ -55,8 +61,18 @@ internal sealed class BossTimerService : IDisposable
         }
 
         var zone = ResolveTimeZone(settings.Game.ServerTimeZone);
+        var now = DateTimeOffset.Now;
+        var spawns = _schedule.NextSpawns(now, settings.Game.Region, zone, count: 3);
 
-        return _schedule.NextSpawns(DateTimeOffset.Now, settings.Game.Region, zone, count: 3);
+        // Trim anything beyond the horizon. Thursday and Monday have no spawns at all, so on a
+        // Wednesday evening the third slot lands on Friday — a countdown reading 48h53m, occupying a
+        // third of the overlay to say nothing actionable. The overlay is for "what is coming up",
+        // and two useful rows beat three rows padded with next week.
+        var useful = spawns.Where(s => s.SpawnsAt - now <= Horizon).ToList();
+
+        // Never return empty just because the horizon is quiet: on an empty day the single next
+        // spawn, however far out, is the whole answer and hiding it would look broken.
+        return useful.Count > 0 ? useful : spawns.Take(1).ToList();
     }
 
     /// <summary>Shows or hides the overlay to match settings, and repositions it.</summary>
@@ -159,10 +175,6 @@ internal sealed class BossTimerService : IDisposable
         }
     }
 
-    /// <summary>
-    /// Resolves an IANA id, falling back to the local zone. .NET 8 accepts IANA ids on Windows, but
-    /// a hand-edited settings file can still carry something unresolvable.
-    /// </summary>
     /// <summary>
     /// Resolves the zone the schedule's times are read in. Empty or unrecognised means the machine's
     /// own zone, which is the normal case — see <see cref="GameSettings.ServerTimeZone"/> for why this

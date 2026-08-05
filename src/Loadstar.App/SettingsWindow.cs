@@ -409,7 +409,7 @@ internal sealed class SettingsWindow : ThemedForm
         // lines, since a half-shown URL is worse than none — it looks like the whole address.
         var seedWarning = info.SeedIsAuthoritative
             ? string.Empty
-            : $"{Environment.NewLine}Press Refresh for this provider's current model list.";
+            : Environment.NewLine + Strings.Get("st.seedWarning");
 
         _billing.Text = $"{ProviderBillingNote(choice.Kind, info)}{seedWarning}";
         _billing.ForeColor = Theme.SubtleText;
@@ -441,7 +441,7 @@ internal sealed class SettingsWindow : ThemedForm
 
         var model = AiCatalog.FindModel(choice.Kind, _model.Text.Trim());
 
-        _modelHint.Text = model is null ? "price unknown" : model.Describe();
+        _modelHint.Text = model is null ? Strings.Get("st.priceUnknown") : model.Describe();
         _modelHint.ForeColor = Theme.SubtleText;
     }
 
@@ -468,11 +468,11 @@ internal sealed class SettingsWindow : ThemedForm
 
         if (string.IsNullOrWhiteSpace(key))
         {
-            _status.Text = $"Enter an API key for {AiCatalog.For(choice.Kind).DisplayName} first.";
+            _status.Text = string.Format(Strings.Get("st.needKey"), AiCatalog.For(choice.Kind).DisplayName);
             return;
         }
 
-        _status.Text = "Fetching models…";
+        _status.Text = Strings.Get("st.fetchingModels");
 
         try
         {
@@ -480,7 +480,7 @@ internal sealed class SettingsWindow : ThemedForm
 
             if (models.Count == 0)
             {
-                _status.Text = "That provider returned no models we carry pricing for. Keeping the existing list.";
+                _status.Text = Strings.Get("st.noModels");
                 return;
             }
 
@@ -496,7 +496,7 @@ internal sealed class SettingsWindow : ThemedForm
             }
 
             _model.Text = selected;
-            _status.Text = $"{models.Count} models from {AiCatalog.For(choice.Kind).DisplayName}.";
+            _status.Text = string.Format(Strings.Get("st.models"), models.Count, AiCatalog.For(choice.Kind).DisplayName);
         }
         catch (AiProviderException ex)
         {
@@ -585,7 +585,7 @@ internal sealed class SettingsWindow : ThemedForm
         // Before the await, not after: a fetch with no feedback looks like nothing happened, and
         // then a failure message arrives out of nowhere and appears to belong to whatever the user
         // clicked in the meantime.
-        _status.Text = "Loading the server list…";
+        _status.Text = Strings.Get("st.loadingServers");
         _status.ForeColor = Theme.SubtleText;
 
         try
@@ -622,13 +622,13 @@ internal sealed class SettingsWindow : ThemedForm
                 _regionLabel.Text = selected.RegionSlug;
             }
 
-            _status.Text = $"{servers.Count} servers across {servers.Select(s => s.RegionSlug).Distinct().Count()} regions.";
+            _status.Text = string.Format(Strings.Get("st.servers"), servers.Count, servers.Select(s => s.RegionSlug).Distinct().Count());
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
             // Offline is a normal state for a desktop app. Keep whatever is stored rather than
             // clearing the user's server because a fetch failed.
-            _status.Text = $"Could not reach questlog for the server list ({ex.Message}). Existing choice kept.";
+            _status.Text = string.Format(Strings.Get("st.serversFail"), ex.Message);
         }
     }
 
@@ -724,7 +724,7 @@ internal sealed class SettingsWindow : ThemedForm
         // a per-provider fact. Nothing here ever displays a stored key: showing it adds nothing and
         // puts a secret on screen.
 
-        _status.Text = $"Settings file: {_store.FilePath}";
+        _status.Text = string.Format(Strings.Get("st.file"), _store.FilePath);
         _status.ForeColor = Theme.SubtleText;
     }
 
@@ -738,7 +738,7 @@ internal sealed class SettingsWindow : ThemedForm
         {
             // Store the process, not the title: titles change as the player moves through the game.
             _process.Text = chosen.ProcessName;
-            _status.Text = $"Targeting process \"{chosen.ProcessName}\" (was showing \"{chosen.Title}\").";
+            _status.Text = string.Format(Strings.Get("st.targetingWas"), chosen.ProcessName, chosen.Title);
         }
     }
 
@@ -753,7 +753,7 @@ internal sealed class SettingsWindow : ThemedForm
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
             _process.Text = Path.GetFileNameWithoutExtension(dialog.FileName);
-            _status.Text = $"Targeting process \"{_process.Text}\".";
+            _status.Text = string.Format(Strings.Get("st.targeting"), _process.Text);
         }
     }
 
@@ -765,9 +765,7 @@ internal sealed class SettingsWindow : ThemedForm
         {
             MessageBox.Show(
                 this,
-                "That hotkey could not be parsed. Use something like Ctrl+Alt+S — at least one " +
-                "modifier is required, otherwise the key would be captured globally in every " +
-                "application.",
+                Strings.Get("st.hotkeyInvalid"),
                 "Loadstar",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
