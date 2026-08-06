@@ -144,8 +144,28 @@ weeks to see whether it alternates before encoding it. If it does, the mode need
 `everyDays`/`since` treatment the slots have, or it needs to live on dated entries rather than weekday
 ones.
 
-Until that is established, **omitting mode is correct**. A name with no mode is incomplete; a name with
-the wrong mode is misleading.
+#### Mode is readable from the icon overlay — no hover required
+
+Reported by the product owner 2026-08-05, and it resolves the problem above:
+
+- **A shield over a boss icon means PvP** — the `[Guild]` contest.
+- **A dove over a boss icon means peace** — open to anyone.
+
+So mode does not need the tooltip at all. Read it off the row, per icon, for every occurrence in the
+capture. That is what makes recording it safe: instead of inferring a cycle from two data points, the
+capture observes the mode of all ~21 days directly, and any cycle falls out of the observations rather
+than being assumed.
+
+This also corrects an earlier misreading in this project's notes. The first pass over the zoomed view
+described some icons as carrying a "green shield badge" and treated it as part of the boss artwork. It
+was the mode overlay. If a description of an icon mentions a shield, that is mode, not art.
+
+Practically this is the easiest thing in the whole capture: shield versus dove is a far coarser visual
+difference than one boss silhouette against another, and it survives the resolution the schedule
+renders at. Names still need the hover; mode does not.
+
+Until the overlays have actually been read, **omitting mode is correct**. A name with no mode is
+incomplete; a name with the wrong mode is misleading.
 
 **Archbosses appear inside field-boss slots.** Ramux is an archboss and was found among the icons of a
 `FieldBosses` 20:00 slot, so the slot `type` alone does not describe what is spawning.
@@ -158,9 +178,9 @@ redone:
 
 ```jsonc
 "bosses": [
-  // mode omitted deliberately unless its cycle is known — see above
-  { "name": "Ramux", "zone": "Stillreach", "kind": "archboss", "despawnMinutes": 50 },
-  { "name": "Talus", "zone": "Urstella Fields" }
+  // mode read from the icon overlay: shield = pvp, dove = peace
+  { "name": "Ramux", "mode": "pvp", "zone": "Stillreach", "kind": "archboss", "despawnMinutes": 50 },
+  { "name": "Talus", "mode": "peace", "zone": "Urstella Fields" }
 ]
 ```
 
