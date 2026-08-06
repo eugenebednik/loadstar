@@ -153,12 +153,22 @@ The overlay sits in the **bottom-right corner** of the boss icon, as a small bad
 - **Shield badge → PvP**, the `[Guild]` contest.
 - **Dove badge → peace**, open to anyone.
 
-Knowing the corner is what makes this mechanical rather than a hunt: crop the bottom-right quadrant of
-each icon and compare two shapes, instead of scanning a whole 20px tile for something that might be
-anywhere in it.
+**But the badge does not survive a screenshot — tested 2026-08-06 and it failed.** Screen capture
+arrives downsampled (2560px display to ~1389px), so a ~20px icon lands at ~11px and its corner badge
+at three or four pixels. Zooming upscales blur; there is no detail to recover. It was possible to see
+*that* one icon had something green in the corner, and impossible to tell a shield from a dove.
 
-So mode does not need the tooltip at all. Read it off the row, per icon, for every occurrence in the
-capture. That is what makes recording it safe: instead of inferring a cycle from two data points, the
+So **do not plan on reading mode from the rows.** It is legible to a person looking at their own
+monitor at full resolution, which is why the report was right, and it is not legible through this
+capture path.
+
+That leaves the hover tooltip as the single source for BOTH name and mode, which changes the shape of
+the work: roughly one hover per icon, about forty for three weeks, and each one is the player's action
+rather than something the capture can batch. Plan the session accordingly — do a slot at a time, and
+prefer the next few days over completeness. A schedule with this week named and next week generic is
+strictly more useful than one abandoned half way with nothing committed.
+
+Mode therefore comes from the tooltip, per icon, like the name. That is what makes recording it safe: instead of inferring a cycle from two data points, the
 capture observes the mode of all ~21 days directly, and any cycle falls out of the observations rather
 than being assumed.
 
