@@ -1516,7 +1516,26 @@ screen capture — no file access, no datamining, and inside the anti-cheat cont
 **Captured from a live client 2026-08-04** (process `TL`, version 1.443.22.7936), which settles
 several open questions and contradicts one assumption in docs/boss-timer.md.
 
-The map's schedule panel has **Hourly** and **Daily** tabs. On Daily it lists one row per date with
+The map's schedule panel has **Hourly** and **Daily** tabs. **Both are live at once and they carry
+different things** — established 2026-08-06, and it is the single most important fact about the
+schedule:
+
+| Tab | Carries | Recurrence |
+| --- | --- | --- |
+| **Daily** | Siege and **archbosses** only | per weekday, and some weekdays are empty |
+| **Hourly** | The **regular** field bosses (Talus, Excavator-9, the rest) | **every day**, 7 slots, composition rotates |
+
+So a day with archbosses has **both** streams running, and the Daily tab alone is not the schedule.
+Modelling only Daily meant that on a weekday it leaves empty — Thursday and Monday — the countdown
+reached forward two days for the next archboss while seven field bosses were spawning that same
+evening. That was reported from the field as "a third field boss that says it is in 48h 27m".
+
+`docs/boss-schedule.json` now expresses three streams: `weeklySlots` (Daily tab), `hourlySlots`
+(Hourly tab, additive across every day) and `datedSlots` (explicit dates, for monthly events like the
+Vienta tax delivery). Slot times are **UTC** and weekday keys are UTC weekdays, so evening Pacific
+slots roll to the next UTC day.
+
+The rest of this section is the original Daily-tab capture. On Daily it lists one row per date with
 event icons under a time:
 
 | Date | Slots |
@@ -1595,14 +1614,39 @@ Sollant at 169,661,552 — confirming the expanded bar is genuinely machine-read
 budgeting side of the product depends on. Privacy masking also verified: the bottom-left party/chat
 corner came back blacked out.
 
-Not yet examined: the **Hourly** tab, which may name events where Daily does not.
+**The Hourly tab was examined 2026-08-06** and turned out to be a second concurrent stream rather
+than another view of the same one — see the top of this section. Seven slots a day in Pacific time:
+11:00, 14:00, 18:00, **18:30**, 21:00, **21:30**, 23:00, with nothing before 11:00 or after 23:00.
 
-## Boss timers
+Two of those matter beyond the times. **18:30 and 21:30 are guild PvP every day** and are the only
+single-event slots; the other five are peace and rotate randomly through the regular roster. That
+makes contest mode derivable **from the slot time** for this stream, with no hovering and no per-boss
+data — which is worth knowing because the mode badge drawn on each icon does *not* survive screen
+capture (a ~20px icon downsamples to ~11px and its corner badge to three or four pixels).
 
-Not a live feed. A **deterministic weekly schedule** per region (Americas / Europe / Asia) plus
-the server's timezone and the 03:00 reset. Shipped as editable JSON and computed locally — no
-runtime scraping, no dependency on a third-party site staying up. Needs a data refresh when a
-patch changes the rotation.
+Rotating slots stay labelled generically. Naming one would be wrong most days, and wrong
+confidently.
+
+## Boss timers — how the feature is built
+
+Not a live feed. There is no spawn API to poll, so the timer computes everything locally from a
+captured table: **three concurrent slot streams** per region (Americas / Europe / Asia), plus the
+03:00 reset. Times are stored in **UTC**, so one instant resolves identically for every player.
+
+**There is no server-timezone setting.** It was removed — nobody except the game knows what zone a
+server runs in, so asking the player produced a confidently wrong countdown whenever they guessed. A
+`defaultTimeZone` per region survives in the file as a display default, not a fact about any server.
+
+**The schedule is published, with a bundled fallback.** `docs/boss-schedule.json` is served by GitHub
+Pages and fetched on startup, so a rotation change is one commit and no release. The same file is
+embedded in the assembly as the offline copy, and a download is validated before it is adopted —
+being offline is the normal state for a desktop app, and the bundled table is stale rather than
+wrong. That is the one place Loadstar depends on something staying up, and the fallback is what makes
+it acceptable.
+
+Refreshing it is a skill: **`/capture-boss-schedule`**, which reads the player's own client, converts
+to UTC, validates the conversion arithmetic against a retained `localPst` on every slot, checks boss
+names against a closed vocabulary in `icon-legend.json`, and publishes.
 
 ## questlog.gg API
 
