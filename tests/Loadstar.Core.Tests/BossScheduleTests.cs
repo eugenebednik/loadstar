@@ -390,4 +390,82 @@ public sealed class BossScheduleTests
 
         Assert.False(spawn.HasGuildContest);
     }
+    /// <summary>
+    /// The point of storing UTC: a boss spawns at ONE instant, so two players in different timezones
+    /// must resolve the same instant from the same data.
+    ///
+    /// <para>Before this, slot times were read in the caller's zone, so a Pacific player and an Eastern
+    /// player on the same Americas server got instants three hours apart — and the Eastern one was
+    /// three hours early while looking entirely plausible.</para>
+    /// </summary>
+    [Fact]
+    public void UtcTimesResolveToTheSameInstantInEveryTimezone()
+    {
+        const string json = """
+            {
+              "timeBasis": "utc",
+              "regions": {
+                "Americas": {
+                  "weeklySlots": {
+                    "Saturday": [ { "time": "00:00", "type": "FieldBosses", "localPst": "17:00" } ]
+                  }
+                }
+              }
+            }
+            """;
+
+        var schedule = BossSchedule.Parse(json);
+        Assert.True(schedule.TimesAreUtc);
+
+        // The same moment, expressed from two machines.
+        var moment = new DateTimeOffset(2026, 8, 6, 12, 0, 0, TimeSpan.Zero);
+
+        var fromPacific = schedule.NextSpawns(
+            moment, "Americas", TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles"), count: 1);
+        var fromEastern = schedule.NextSpawns(
+            moment, "Americas", TimeZoneInfo.FindSystemTimeZoneById("America/New_York"), count: 1);
+        var fromTokyo = schedule.NextSpawns(
+            moment, "Americas", TimeZoneInfo.FindSystemTimeZoneById("Asia/Tokyo"), count: 1);
+
+        var expected = new DateTimeOffset(2026, 8, 8, 0, 0, 0, TimeSpan.Zero);
+
+        Assert.Equal(expected, Assert.Single(fromPacific).SpawnsAt);
+        Assert.Equal(expected, Assert.Single(fromEastern).SpawnsAt);
+        Assert.Equal(expected, Assert.Single(fromTokyo).SpawnsAt);
+
+        // And that instant is Friday 17:00 Pacific, which is what the client showed.
+        var pacific = TimeZoneInfo.ConvertTime(
+            expected, TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles"));
+
+        Assert.Equal(DayOfWeek.Friday, pacific.DayOfWeek);
+        Assert.Equal(17, pacific.Hour);
+    }
+
+    /// <summary>
+    /// A schedule with no <c>timeBasis</c> keeps resolving against the caller's zone. Installs are
+    /// fetching such a file right now, so changing its meaning would break their timer.
+    /// </summary>
+    [Fact]
+    public void ScheduleWithoutTimeBasisStaysZoneRelative()
+    {
+        const string json = """
+            {
+              "regions": {
+                "Americas": {
+                  "weeklySlots": { "Friday": [ { "time": "17:00", "type": "FieldBosses" } ] }
+                }
+              }
+            }
+            """;
+
+        var schedule = BossSchedule.Parse(json);
+        Assert.False(schedule.TimesAreUtc);
+
+        var zone = TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles");
+        var spawn = Assert.Single(schedule.NextSpawns(
+            new DateTimeOffset(2026, 8, 6, 12, 0, 0, TimeSpan.Zero), "Americas", zone, count: 1));
+
+        // 17:00 in the supplied zone, exactly as before.
+        Assert.Equal(17, TimeZoneInfo.ConvertTime(spawn.SpawnsAt, zone).Hour);
+    }
 }

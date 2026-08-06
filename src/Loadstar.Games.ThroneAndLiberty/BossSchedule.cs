@@ -25,16 +25,31 @@ public sealed class BossSchedule
 
     public string? GamePatch { get; }
 
+    /// <summary>
+    /// True when slot times are UTC wall-clock keyed by UTC weekday, which is how they are now stored.
+    ///
+    /// <para>A boss spawns at ONE instant for the region and every player sees it in their own zone.
+    /// Reading slot times in the player's zone made the countdown correct only for players whose
+    /// machine happened to match the server — a player on the same Americas server in Eastern time got
+    /// a countdown three hours early that looked entirely plausible.</para>
+    ///
+    /// <para>False keeps the old zone-relative behaviour, so a schedule written before this flag
+    /// existed still resolves the way it did. That matters because installs are fetching one.</para>
+    /// </summary>
+    public bool TimesAreUtc { get; }
+
     private BossSchedule(
         IReadOnlyDictionary<string, RegionSchedule> regions,
         int resetHourLocal,
         string? capturedAt,
-        string? gamePatch)
+        string? gamePatch,
+        bool timesAreUtc)
     {
         _regions = regions;
         ResetHourLocal = resetHourLocal;
         CapturedAt = capturedAt;
         GamePatch = gamePatch;
+        TimesAreUtc = timesAreUtc;
     }
 
     /// <summary>Region slugs that actually carry slot data. Regions present but empty are excluded.</summary>
@@ -85,7 +100,9 @@ public sealed class BossSchedule
             regions,
             root.TryGetProperty("resetHourLocal", out var reset) && reset.TryGetInt32(out var hour) ? hour : 3,
             root.TryGetProperty("capturedAt", out var captured) ? captured.GetString() : null,
-            root.TryGetProperty("gamePatch", out var patch) ? patch.GetString() : null);
+            root.TryGetProperty("gamePatch", out var patch) ? patch.GetString() : null,
+            root.TryGetProperty("timeBasis", out var basis)
+                && string.Equals(basis.GetString(), "utc", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -255,7 +272,10 @@ public sealed class BossSchedule
             return [];
         }
 
-        var localNow = TimeZoneInfo.ConvertTime(now, serverZone);
+        // UTC data is walked in UTC — dates, weekdays and times all in the same basis. Mixing them is
+        // the whole hazard here: 17:00 Pacific Friday is 00:00 UTC Saturday, so reading a UTC time
+        // against a local weekday lands a day out while still looking like a plausible countdown.
+        var localNow = TimesAreUtc ? now.ToUniversalTime() : TimeZoneInfo.ConvertTime(now, serverZone);
         var spawns = new List<BossSpawn>();
 
         // Walk from yesterday so a slot that is "today" in server time but still ahead of the
@@ -277,7 +297,11 @@ public sealed class BossSchedule
                     continue;
                 }
 
-                var instant = ToInstant(date, slot.TimeOfDay, serverZone);
+                // No zone conversion for UTC data, and no DST question either — a UTC wall clock is
+                // already an instant. The zone path stays for pre-timeBasis schedules.
+                var instant = TimesAreUtc
+                    ? new DateTimeOffset(date.Add(slot.TimeOfDay), TimeSpan.Zero)
+                    : ToInstant(date, slot.TimeOfDay, serverZone);
 
                 if (instant is not { } spawnAt || spawnAt <= now)
                 {

@@ -22,6 +22,28 @@
   "capturedAt": "2026-08-04",
   "gamePatch": "4.5.0",
 
+  "$timeBasis": [
+    "SLOT TIMES ARE UTC, and weekday keys are UTC weekdays. Converted 2026-08-06 from the Pacific",
+    "wall-clock times read off the client (PDT, UTC-7).",
+    "",
+    "Why: a world boss spawns at ONE instant for the region, and every player sees that instant in",
+    "their own zone. Storing the wall clock made the timer correct only for players whose machine zone",
+    "happens to match the server's -- a player on the same Americas server in Eastern time got a",
+    "countdown three hours early that looked entirely plausible.",
+    "",
+    "THE WEEKDAY MOVES. 17:00 Pacific Friday is 00:00 UTC SATURDAY, so every evening slot rolls to the",
+    "next UTC day and Sunday's siege now sits on Monday. localPst is kept on each slot so this file",
+    "stays verifiable against the client without doing the arithmetic in your head.",
+    "",
+    "DST IS UNRESOLVED. Every slot lands on a whole or half UTC hour and 17:00 Pacific is exactly UTC",
+    "midnight, which reads as UTC-native and therefore DST-immune -- but that is one capture in one",
+    "season. November settles it: if the client still shows 17:00 Pacific after the change, the",
+    "schedule is wall-clock and these stored times have drifted an hour; if it shows 16:00, UTC is",
+    "right. Check it then rather than rediscovering a one-hour error as a mystery."
+  ],
+
+  "timeBasis": "utc",
+
   "$scheduleShapeIsWrong": [
     "THE dailySlots MODEL BELOW CANNOT EXPRESS THE REAL SCHEDULE. Captured from a live client",
     "2026-08-04 (process TL, 1.443.22.7936), the in-game map's Daily tab shows:",
@@ -203,26 +225,26 @@
       "wrong contest is worse than naming none: a guildless player told a boss is open, or a guild told",
       "it is theirs, both waste the trip."],
       "weeklySlots": {
-        "Monday": [],
-        "Tuesday": [
-          { "time": "17:00", "type": "FieldBosses" },
-          { "time": "20:00", "type": "FieldBosses" }
+        "Monday": [
+          {"time": "01:00", "type": "Siege", "localPst": "18:00"}
         ],
+        "Tuesday": [],
         "Wednesday": [
-          { "time": "17:00", "type": "FieldBosses", "bosses": [] },
-          { "time": "20:00", "type": "FieldBosses", "bosses": [] }
+          {"time": "00:00", "type": "FieldBosses", "localPst": "17:00"},
+          {"time": "03:00", "type": "FieldBosses", "localPst": "20:00"}
         ],
-        "Thursday": [],
-        "Friday": [
-          { "time": "17:00", "type": "FieldBosses" },
-          { "time": "20:00", "type": "FieldBosses" }
+        "Thursday": [
+          {"time": "00:00", "type": "FieldBosses", "localPst": "17:00", "bosses": []},
+          {"time": "03:00", "type": "FieldBosses", "localPst": "20:00", "bosses": []}
         ],
+        "Friday": [],
         "Saturday": [
-          { "time": "17:00", "type": "FieldBosses" },
-          { "time": "20:00", "type": "FieldBosses" }
+          {"time": "00:00", "type": "FieldBosses", "localPst": "17:00"},
+          {"time": "03:00", "type": "FieldBosses", "localPst": "20:00"}
         ],
         "Sunday": [
-          { "time": "18:00", "type": "Siege" }
+          {"time": "00:00", "type": "FieldBosses", "localPst": "17:00"},
+          {"time": "03:00", "type": "FieldBosses", "localPst": "20:00"}
         ]
       },
       "dailySlots": [
