@@ -148,8 +148,14 @@ ones.
 
 Reported by the product owner 2026-08-05, and it resolves the problem above:
 
-- **A shield over a boss icon means PvP** — the `[Guild]` contest.
-- **A dove over a boss icon means peace** — open to anyone.
+The overlay sits in the **bottom-right corner** of the boss icon, as a small badge:
+
+- **Shield badge → PvP**, the `[Guild]` contest.
+- **Dove badge → peace**, open to anyone.
+
+Knowing the corner is what makes this mechanical rather than a hunt: crop the bottom-right quadrant of
+each icon and compare two shapes, instead of scanning a whole 20px tile for something that might be
+anywhere in it.
 
 So mode does not need the tooltip at all. Read it off the row, per icon, for every occurrence in the
 capture. That is what makes recording it safe: instead of inferring a cycle from two data points, the
