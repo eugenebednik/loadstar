@@ -126,6 +126,65 @@ public sealed class BossSchedule
         return week;
     }
 
+    /// <summary>
+    /// Reads one entry of a slot's <c>bosses</c> array.
+    ///
+    /// <para><b>Both forms are accepted.</b> A bare string is a name and nothing else, which keeps
+    /// every schedule written before the object form valid — including the ones already published. An
+    /// object carries what the client's hover tooltip actually hands over:</para>
+    ///
+    /// <code>
+    /// "bosses": [
+    ///   { "name": "Ramux", "mode": "pvp", "zone": "Stillreach", "kind": "archboss", "despawnMinutes": 50 },
+    ///   "Talus"
+    /// ]
+    /// </code>
+    ///
+    /// <para>Everything except the name is optional, and absent is meaningfully different from wrong:
+    /// a missing <c>mode</c> means nobody has read the badge yet, which is the honest state until
+    /// someone has.</para>
+    /// </summary>
+    private static ScheduledBoss? ReadBoss(JsonElement entry)
+    {
+        if (entry.ValueKind == JsonValueKind.String)
+        {
+            var bare = entry.GetString();
+
+            return string.IsNullOrWhiteSpace(bare) ? null : new ScheduledBoss { Name = bare.Trim() };
+        }
+
+        if (entry.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var name = entry.TryGetProperty("name", out var n) ? n.GetString() : null;
+
+        // A nameless entry is discarded rather than kept as an empty row: the whole point of the list
+        // is to say who is spawning, and a blank one renders as a stray comma in the overlay.
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return null;
+        }
+
+        return new ScheduledBoss
+        {
+            Name = name.Trim(),
+            Mode = Text(entry, "mode"),
+            Zone = Text(entry, "zone"),
+            Kind = Text(entry, "kind"),
+            DespawnMinutes = entry.TryGetProperty("despawnMinutes", out var d) && d.TryGetInt32(out var m) && m > 0
+                ? m
+                : null,
+        };
+
+        static string? Text(JsonElement element, string property) =>
+            element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
+                && !string.IsNullOrWhiteSpace(value.GetString())
+                    ? value.GetString()!.Trim()
+                    : null;
+    }
+
     private static IReadOnlyList<ScheduleSlot> ReadSlots(JsonElement array)
     {
         if (array.ValueKind != JsonValueKind.Array)
@@ -159,11 +218,7 @@ public sealed class BossSchedule
             // five at 20:00 — so this is a list, not a name. Empty or absent means "not yet
             // identified", and the countdown falls back to the event type rather than inventing one.
             var bosses = slot.TryGetProperty("bosses", out var b) && b.ValueKind == JsonValueKind.Array
-                ? b.EnumerateArray()
-                    .Select(n => n.GetString())
-                    .Where(n => !string.IsNullOrWhiteSpace(n))
-                    .Select(n => n!.Trim())
-                    .ToArray()
+                ? b.EnumerateArray().Select(ReadBoss).OfType<ScheduledBoss>().ToArray()
                 : [];
 
             slots.Add(new ScheduleSlot(parsed, type ?? "Unknown", period, anchor, bosses));
@@ -298,7 +353,7 @@ public sealed class BossSchedule
         string EventType,
         int PeriodDays = 7,
         DateOnly? Anchor = null,
-        IReadOnlyList<string>? Bosses = null)
+        IReadOnlyList<ScheduledBoss>? Bosses = null)
     {
         /// <summary>
         /// Whether this slot happens on <paramref name="date"/>. Weekly slots (no anchor) always do —
@@ -320,14 +375,81 @@ public sealed class BossSchedule
     }
 }
 
+/// <summary>
+/// One boss in a schedule slot, as the client's hover tooltip describes it:
+/// <c>[Guild] Ramux / Stillreach | Monster Lv. 60 / Despawns after 50min.</c>
+///
+/// <para>Only <see cref="Name"/> is required. Everything else is null when nobody has read it yet, and
+/// <b>absent is deliberately different from wrong</b> — a missing <see cref="Mode"/> means the badge
+/// has not been checked, which is the honest state until it has. Filling these in with plausible
+/// guesses is the failure this whole type exists to avoid: a player cannot tell a wrong boss from a
+/// right one until they have travelled somewhere and found nothing.</para>
+/// </summary>
+public sealed record ScheduledBoss
+{
+    public required string Name { get; init; }
+
+    /// <summary>
+    /// Contest mode, read from the badge in the icon's bottom-right corner: a shield is PvP (the
+    /// <c>[Guild]</c> contest), a dove is open. Null when unread.
+    ///
+    /// <para>It belongs to the OCCURRENCE, not the boss. Ramux was observed guild-contested on
+    /// 2026-08-05 and open on 2026-08-12 — same weekday, same time, adjacent weeks. So this must never
+    /// be copied from one occurrence onto another.</para>
+    /// </summary>
+    public string? Mode { get; init; }
+
+    /// <summary>Where it spawns, e.g. <c>Stillreach</c>. The player has to travel there, so a
+    /// countdown that names the zone is worth more than one that names only the boss.</summary>
+    public string? Zone { get; init; }
+
+    /// <summary>
+    /// <c>archboss</c> where known. Archbosses appear INSIDE field-boss slots — Ramux was found among
+    /// the icons of a <c>FieldBosses</c> 20:00 slot — so the slot's own type does not describe what is
+    /// spawning and this is the only place that distinction lives.
+    /// </summary>
+    public string? Kind { get; init; }
+
+    /// <summary>How long it stays up. The window to actually arrive, which the spawn instant alone
+    /// does not give.</summary>
+    public int? DespawnMinutes { get; init; }
+
+    /// <summary>
+    /// Whether this is a guild-only PvP contest. Matches both the badge vocabulary (<c>pvp</c>) and the
+    /// tooltip's (<c>guild</c>), since the capture may reasonably record either.
+    /// </summary>
+    public bool IsGuildContest =>
+        Mode is not null
+        && (Mode.Equals("pvp", StringComparison.OrdinalIgnoreCase)
+            || Mode.Equals("guild", StringComparison.OrdinalIgnoreCase));
+
+    public bool IsArchboss => Kind?.Equals("archboss", StringComparison.OrdinalIgnoreCase) ?? false;
+
+    /// <summary>Name, with the zone when known — what a countdown row should say.</summary>
+    public override string ToString() => Zone is null ? Name : $"{Name} — {Zone}";
+}
+
 public sealed record BossSpawn(
     DateTimeOffset SpawnsAt,
     string EventType,
     TimeSpan Until,
-    IReadOnlyList<string>? Bosses = null)
+    IReadOnlyList<ScheduledBoss>? Bosses = null)
 {
-    /// <summary>Named bosses for this slot, empty when the schedule has not identified them yet.</summary>
-    public IReadOnlyList<string> Names => Bosses ?? [];
+    /// <summary>Bosses for this slot, empty when the schedule has not identified them yet.</summary>
+    public IReadOnlyList<ScheduledBoss> Named => Bosses ?? [];
+
+    /// <summary>Just the names, which is what the overlay label is built from.</summary>
+    public IReadOnlyList<string> Names => Named.Select(b => b.Name).ToArray();
+
+    /// <summary>
+    /// True when any boss in this slot is a guild contest.
+    ///
+    /// <para>The single most actionable thing the mode badge buys: a player without a guild cannot
+    /// take part at all, so telling them to travel wastes their evening. It also flips preparation
+    /// advice to the PvP stat axis. Unknown mode is NOT treated as guild — absent means unread, and
+    /// guessing here is the error that matters.</para>
+    /// </summary>
+    public bool HasGuildContest => Named.Any(b => b.IsGuildContest);
 
     public bool IsFieldBoss => EventType.Equals("FieldBosses", StringComparison.OrdinalIgnoreCase);
 

@@ -301,4 +301,87 @@ public sealed class BossScheduleTests
         Assert.Empty(spawns[1].Names);
         Assert.Equal("Field Bosses", spawns[1].DisplayName);
     }
+    /// <summary>
+    /// The object form carries what the tooltip gives; a bare string still parses as a name. Both must
+    /// work, because schedules published before the object existed are being fetched by installs now.
+    /// </summary>
+    [Fact]
+    public void BossEntriesAcceptObjectsAndBareStrings()
+    {
+        const string json = """
+            {
+              "resetHourLocal": 3,
+              "regions": {
+                "Americas": {
+                  "defaultTimeZone": "America/Los_Angeles",
+                  "weeklySlots": {
+                    "Wednesday": [
+                      { "time": "20:00", "type": "FieldBosses", "bosses": [
+                          { "name": "Ramux", "mode": "pvp", "zone": "Stillreach",
+                            "kind": "archboss", "despawnMinutes": 50 },
+                          "Talus",
+                          { "name": "  " }
+                        ] }
+                    ]
+                  }
+                }
+              }
+            }
+            """;
+
+        var zone = TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles");
+        // count: 1 — the slot is weekly, so a larger count returns every Wednesday in the walk window.
+        var spawn = Assert.Single(BossSchedule.Parse(json).NextSpawns(
+            new DateTimeOffset(2026, 8, 5, 8, 0, 0, zone.GetUtcOffset(new DateTime(2026, 8, 5))),
+            "Americas", zone, count: 1));
+
+        // The nameless entry is dropped rather than kept as a blank row.
+        Assert.Equal(2, spawn.Named.Count);
+        Assert.Equal(["Ramux", "Talus"], spawn.Names);
+        Assert.Equal("Ramux, Talus", spawn.DisplayName);
+
+        var ramux = spawn.Named[0];
+        Assert.Equal("Stillreach", ramux.Zone);
+        Assert.Equal(50, ramux.DespawnMinutes);
+        Assert.True(ramux.IsArchboss);
+        Assert.True(ramux.IsGuildContest);
+        Assert.Equal("Ramux — Stillreach", ramux.ToString());
+
+        // Bare string: name only, and crucially NOT inferred to be a guild contest.
+        var talus = spawn.Named[1];
+        Assert.Null(talus.Mode);
+        Assert.Null(talus.Zone);
+        Assert.False(talus.IsGuildContest);
+
+        Assert.True(spawn.HasGuildContest);
+    }
+
+    /// <summary>
+    /// Unread mode must never read as a guild contest. Absent means nobody checked the badge, and
+    /// inferring PvP from silence would tell a guildless player to skip a boss open to them.
+    /// </summary>
+    [Fact]
+    public void UnreadModeIsNotTreatedAsGuildContest()
+    {
+        const string json = """
+            {
+              "regions": {
+                "Americas": {
+                  "defaultTimeZone": "America/Los_Angeles",
+                  "weeklySlots": {
+                    "Wednesday": [ { "time": "20:00", "type": "FieldBosses", "bosses": ["Talus"] } ]
+                  }
+                }
+              }
+            }
+            """;
+
+        var zone = TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles");
+        // count: 1 — the slot is weekly, so a larger count returns every Wednesday in the walk window.
+        var spawn = Assert.Single(BossSchedule.Parse(json).NextSpawns(
+            new DateTimeOffset(2026, 8, 5, 8, 0, 0, zone.GetUtcOffset(new DateTime(2026, 8, 5))),
+            "Americas", zone, count: 1));
+
+        Assert.False(spawn.HasGuildContest);
+    }
 }
