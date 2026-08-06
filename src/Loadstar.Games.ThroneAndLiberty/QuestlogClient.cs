@@ -179,6 +179,176 @@ public sealed partial class QuestlogClient
         return servers;
     }
 
+    /// <summary>
+    /// The builds the community is actually liking right now for a given weapon pair.
+    ///
+    /// <para><b>This is what lets Loadstar stop demanding a build URL.</b> The app already reads the
+    /// player's two weapons off the character sheet, and two weapons name a class, so it can look up
+    /// what people play for that class and offer a target instead of asking for one.</para>
+    ///
+    /// <para><c>sort</c> accepts <c>popular | recent | updated | likes-week | likes-month</c>.
+    /// <c>likes-month</c> is the default here because it answers the right question: not "what was
+    /// most liked ever", which surfaces builds pinned to a patch from two rewrites ago, but "what are
+    /// people liking now". A build with 200 lifetime likes and none this month is a historical
+    /// artifact.</para>
+    ///
+    /// <para>The weapon parameters are <c>mainHandWeapon</c> and <c>offHandWeapon</c>, and they DO
+    /// filter — unlike <c>weaponTypes</c>, <c>weapons</c>, <c>class</c> and several other plausible
+    /// names, which the endpoint accepts and silently ignores. An ignored filter returns the unfiltered
+    /// top of the list, which looks like a successful query and is the failure worth knowing about.
+    /// Because of that, results are re-checked against the requested pair before being returned.</para>
+    /// </summary>
+    public async Task<IReadOnlyList<BuildCandidate>> FindPopularBuildsAsync(
+        string weaponA,
+        string weaponB,
+        CancellationToken cancellationToken,
+        string sort = "likes-month",
+        int pages = 2)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(weaponA);
+        ArgumentException.ThrowIfNullOrWhiteSpace(weaponB);
+
+        var found = new List<BuildCandidate>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        for (var page = 1; page <= Math.Max(1, pages); page++)
+        {
+            var input = JsonSerializer.Serialize(new
+            {
+                searchTerm = string.Empty,
+                tags = Array.Empty<string>(),
+                mainHandWeapon = weaponA.Trim().ToLowerInvariant(),
+                offHandWeapon = weaponB.Trim().ToLowerInvariant(),
+                sort,
+                page,
+            });
+
+            using var response = await _http
+                .GetAsync($"{Base}characterBuilder.searchCharacters?input={Uri.EscapeDataString(input)}", cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                break;
+            }
+
+            var payload = await response.Content
+                .ReadFromJsonAsync<JsonElement>(cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!payload.TryGetProperty("result", out var result)
+                || !result.TryGetProperty("data", out var data)
+                || !data.TryGetProperty("pageData", out var rows)
+                || rows.ValueKind != JsonValueKind.Array)
+            {
+                break;
+            }
+
+            var any = false;
+
+            foreach (var row in rows.EnumerateArray())
+            {
+                any = true;
+                var candidate = ReadCandidate(row);
+
+                // Guard against a silently-ignored filter: only keep rows whose weapons really are
+                // the pair asked for.
+                if (candidate is null
+                    || !string.Equals(TlClasses.Name(candidate.WeaponTypes), TlClasses.Name(weaponA, weaponB), StringComparison.Ordinal)
+                    || !seen.Add(candidate.Slug))
+                {
+                    continue;
+                }
+
+                found.Add(candidate);
+            }
+
+            if (!any)
+            {
+                break;
+            }
+        }
+
+        return found;
+    }
+
+    private static BuildCandidate? ReadCandidate(JsonElement row)
+    {
+        var slug = row.TryGetProperty("url", out var u) ? u.GetString() : null;
+
+        if (string.IsNullOrWhiteSpace(slug))
+        {
+            return null;
+        }
+
+        var weapons = row.TryGetProperty("weaponTypes", out var w) && w.ValueKind == JsonValueKind.Array
+            ? w.EnumerateArray().Select(x => x.GetString() ?? string.Empty).Where(x => x.Length > 0).ToArray()
+            : [];
+
+        var name = row.TryGetProperty("buildName", out var n) ? n.GetString() : null;
+
+        return new BuildCandidate
+        {
+            Slug = slug,
+            // Untrusted text from an arbitrary author. Never treated as an instruction, and blank
+            // names are common enough that a fallback is required rather than defensive.
+            Name = string.IsNullOrWhiteSpace(name) ? "(unnamed build)" : name.Trim(),
+            Author = row.TryGetProperty("characterName", out var a) ? a.GetString() : null,
+            WeaponTypes = weapons,
+            Tags = row.TryGetProperty("tags", out var t) && t.ValueKind == JsonValueKind.Array
+                ? t.EnumerateArray().Select(x => x.GetString() ?? string.Empty).Where(x => x.Length > 0).ToArray()
+                : [],
+            Likes = row.TryGetProperty("likeCount", out var lc) && lc.TryGetInt32(out var likes) ? likes : 0,
+            LikesLast30Days = row.TryGetProperty("likesLast30Days", out var l30) && l30.TryGetInt32(out var recent) ? recent : 0,
+            UpdatedAt = row.TryGetProperty("updatedAt", out var up) && up.ValueKind == JsonValueKind.String
+                && DateTimeOffset.TryParse(up.GetString(), out var when) ? when : null,
+            Level = row.TryGetProperty("level", out var lv) && lv.TryGetInt32(out var level) ? level : null,
+        };
+    }
+
     [GeneratedRegex("^[A-Za-z0-9_-]{4,64}$")]
     private static partial Regex SlugPattern();
+}
+
+/// <summary>
+/// A build the app can offer as a target, from the search listing rather than a full fetch.
+///
+/// <para>Deliberately shallow. Choosing between candidates needs a name, an axis and some evidence
+/// that people rate it; the equipment only matters once one is chosen, and fetching six loadouts each
+/// for ten candidates to show a list would be rude to someone else's free API.</para>
+/// </summary>
+public sealed record BuildCandidate
+{
+    public required string Slug { get; init; }
+
+    /// <summary>Author-supplied, and therefore untrusted text. Display it; never act on it.</summary>
+    public required string Name { get; init; }
+
+    public string? Author { get; init; }
+
+    public IReadOnlyList<string> WeaponTypes { get; init; } = [];
+
+    /// <summary>Author-supplied tags — <c>pve</c>, <c>pvp</c>, <c>healer</c>, <c>tank</c> and so on.
+    /// Unmoderated, so they indicate intent rather than proving it.</summary>
+    public IReadOnlyList<string> Tags { get; init; } = [];
+
+    public int Likes { get; init; }
+
+    /// <summary>Likes in the last 30 days — the better popularity signal, because lifetime likes
+    /// accumulate on builds written for patches that no longer exist.</summary>
+    public int LikesLast30Days { get; init; }
+
+    public DateTimeOffset? UpdatedAt { get; init; }
+
+    public int? Level { get; init; }
+
+    public string? ClassName => TlClasses.Name(WeaponTypes);
+
+    public string Url => $"https://questlog.gg/throne-and-liberty/en/character-builder/{Slug}";
+
+    /// <summary>True when the author tagged this PvP. Checked before PvE, since a build tagged both
+    /// is usually PvP-first in practice.</summary>
+    public bool IsPvp => Tags.Any(t => t.Equals("pvp", StringComparison.OrdinalIgnoreCase));
+
+    public bool IsPve => Tags.Any(t => t.Equals("pve", StringComparison.OrdinalIgnoreCase));
 }

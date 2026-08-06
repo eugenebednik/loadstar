@@ -207,16 +207,19 @@ internal sealed class TrayApplication : IDisposable
                 _store.Save(settings);
             }
 
-            // Before the capture, not after. Every piece of advice this app gives is relative to an
-            // imported build — without one there is nothing to compare against, and the honest
-            // output would be a guess at what "good" means for a stat, which is precisely what the
-            // advice engine must never do. Gating here means no screenshot is taken and no question
-            // is asked for a request that could not have been answered.
-            if (!EnsureBuildConfigured(settings))
-            {
-                return;
-            }
-
+            // NO BUILD GATE HERE ANY MORE, deliberately. This used to refuse the capture outright
+            // when no questlog URL was configured, on the reasoning that advice is measured against a
+            // target and without one there is nothing to compare to.
+            //
+            // That reasoning was wrong about its own product. Most of what makes the advice good is
+            // visible on the screen and needs no target at all: empty artifact slots, unfilled rune
+            // sockets, a set one piece from a threshold, a negative boss stat, and a stat
+            // redistribution that costs nothing. The gate withheld all of it behind a chore, and the
+            // player most likely to hit it is the one who has not yet found a build to copy — exactly
+            // the player with the most to gain.
+            //
+            // What genuinely needs a build is the PvE/PvP axis, and the prompt now handles its absence
+            // by asking rather than assuming. See DescribeNoTarget in TlSystemPrompt.
             var result = await _gated.CaptureAsync(
                 new CaptureRequest
                 {
@@ -281,40 +284,65 @@ internal sealed class TrayApplication : IDisposable
             return;
         }
 
-        // Belt and braces. EnsureBuildConfigured already stopped this before the capture; this
-        // second check guards any future caller that reaches AnalyseAsync by another path, because
-        // the invariant being protected is "nothing is sent to a provider without a build".
-        if (string.IsNullOrWhiteSpace(settings.Game.BuildUrl))
-        {
-            ShowBalloon("No target build", "Paste a questlog.gg build URL in Settings.", ToolTipIcon.Warning);
-            return;
-        }
-
         // Name the provider: this is the moment a screenshot leaves the machine, and which third
         // party receives it is exactly what the user should be told.
         ShowBalloon("Analysing…", $"Sending one screenshot to {providerInfo.DisplayName}.");
 
-        // Stage-by-stage, because "no answer appeared" spans five things that can fail and the log is
-        // only useful if it says which one did.
-        Core.Diagnostics.Log.Info($"Analyse: fetching build {settings.Game.BuildUrl}");
-
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-        var character = await new QuestlogClient(http).GetCharacterAsync(settings.Game.BuildUrl, CancellationToken.None);
 
-        if (character is null || character.Builds.Count == 0)
+        // A BUILD IS OPTIONAL. It used to be required, and the requirement was in the wrong place:
+        // most of what makes the advice good — empty artifact slots, unfilled rune sockets, a set one
+        // piece from a threshold, a free stat reallocation — is visible on screen and needs no target
+        // at all. Demanding a questlog URL first put a chore in front of the first useful answer.
+        //
+        // When one is configured it still wins, because it states the player's intended axis and role,
+        // which nothing on the screen reveals.
+        TargetBuild? target = null;
+        IReadOnlyList<string> characterTags = [];
+
+        if (!string.IsNullOrWhiteSpace(settings.Game.BuildUrl))
         {
-            Core.Diagnostics.Log.Warn($"Analyse: questlog returned no builds for {settings.Game.BuildUrl}");
-            ShowBalloon("Build not found", $"questlog returned nothing for \"{settings.Game.BuildUrl}\".", ToolTipIcon.Warning);
-            return;
+            // Stage-by-stage, because "no answer appeared" spans five things that can fail and the log
+            // is only useful if it says which one did.
+            Core.Diagnostics.Log.Info($"Analyse: fetching build {settings.Game.BuildUrl}");
+
+            var character = await new QuestlogClient(http)
+                .GetCharacterAsync(settings.Game.BuildUrl, CancellationToken.None);
+
+            if (character is null || character.Builds.Count == 0)
+            {
+                // Warn, then continue without it. A typo in the URL should cost the player the build's
+                // contribution, not the whole answer.
+                Core.Diagnostics.Log.Warn($"Analyse: questlog returned no builds for {settings.Game.BuildUrl}");
+                ShowBalloon(
+                    "Build not found",
+                    $"questlog returned nothing for \"{settings.Game.BuildUrl}\". Continuing without it.",
+                    ToolTipIcon.Warning);
+            }
+            else
+            {
+                target = character.Builds[0];
+                characterTags = character.Tags;
+            }
         }
 
-        var target = character.Builds[0];
-        var allocated = TlStats.MapAllocated(target.Attributes);
-        var derived = await ComputeTargetsAsync(target, http);
+        var allocated = target is null
+            ? new Dictionary<TlStat, int>()
+            : TlStats.MapAllocated(target.Attributes);
+
+        var derived = target is null ? null : await ComputeTargetsAsync(target, http);
+
+        // Candidates for the class the player is playing, so the model can offer a target instead of
+        // demanding one. Only worth fetching when nothing is pinned, and never worth failing over:
+        // no candidates means the offer is skipped, not that the answer is lost.
+        var candidates = target is null
+            ? await FindCandidateBuildsAsync(settings, http)
+            : [];
 
         Core.Diagnostics.Log.Info(
-            $"Analyse: build \"{target.Name}\", {allocated.Count} allocated stats, "
-            + $"targets {(derived is null ? "unavailable" : "computed")}. "
+            $"Analyse: build \"{target?.Name ?? "(none pinned)"}\", {allocated.Count} allocated stats, "
+            + $"targets {(derived is null ? "unavailable" : "computed")}, "
+            + $"{candidates.Count} candidate build(s). "
             + $"Sending {frame.Png.Length / 1024}KB to {providerInfo.DisplayName} "
             + $"as {AiProviderFactory.ResolveModel(provider, settings.Ai.Model)}.");
 
@@ -331,9 +359,10 @@ internal sealed class TrayApplication : IDisposable
                 // explicitly; on "System" it follows the language of the question instead.
                 SystemPrompt = TlSystemPrompt.Build(
                     target,
-                    character.Tags,
+                    characterTags,
                     AppLanguages.EnglishName(settings.Language),
-                    derived),
+                    derived,
+                    candidates),
                 UserPrompt = BuildUserPrompt(question, allocated),
                 Images = [new CapturedImage { Png = frame.Png, Label = frame.Label }],
                 MaxOutputTokens = 3000,
@@ -365,6 +394,8 @@ internal sealed class TrayApplication : IDisposable
 
         var advice = AdviceParser.Parse(response.Text, DateTimeOffset.Now, response.Usage);
         var observed = TlObservationParser.Parse(response.Text);
+
+        RememberWeapons(response.Text);
 
         // The arithmetic stays ours. The model reads the numbers off the screen; StatPlanner prices
         // the move, because a correct recommendation with its cost omitted is the failure this
@@ -426,6 +457,110 @@ internal sealed class TrayApplication : IDisposable
     /// blocking the capture. Losing the computed targets makes the advice weaker; failing the whole
     /// request because a reference table could not be fetched would make it useless.</para>
     /// </summary>
+    /// <summary>
+    /// Builds the community is actively liking for the class the player is playing, so a target can be
+    /// offered rather than demanded.
+    ///
+    /// <para>Needs the weapons, which come from a previous reply — so the very first capture has none
+    /// and returns empty. That is correct rather than a gap: nothing can be recommended for a class
+    /// nobody has identified yet, and the alternative is guessing a class from nothing.</para>
+    ///
+    /// <para>Never throws and never blocks the answer. No candidates means the offer is skipped; the
+    /// advice the player actually asked for does not depend on it.</para>
+    /// </summary>
+    private static async Task<IReadOnlyList<BuildCandidate>> FindCandidateBuildsAsync(
+        LoadstarSettings settings,
+        HttpClient http)
+    {
+        var weapons = settings.Game.LastWeapons;
+
+        // Already offered once. Asking again every capture is worse than never asking, so the fetch
+        // is skipped too — no point paying for a request whose only use has expired.
+        if (weapons.Count != 2 || settings.Game.BuildOfferShown)
+        {
+            return [];
+        }
+
+        try
+        {
+            var candidates = await new QuestlogClient(http)
+                .FindPopularBuildsAsync(weapons[0], weapons[1], CancellationToken.None);
+
+            Core.Diagnostics.Log.Info(
+                $"Candidates: {candidates.Count} for {TlClasses.Describe(weapons[0], weapons[1])}.");
+
+            return candidates;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            Core.Diagnostics.Log.Warn($"Candidates: lookup failed ({ex.GetType().Name}). Skipping the offer.");
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Stores the weapons the model reported, weighing how it came by them.
+    ///
+    /// <para>This is where "detection must be rock solid" is actually enforced, because it is the last
+    /// point before a guess becomes a stored fact that shapes every later recommendation. The rules:</para>
+    ///
+    /// <list type="bullet">
+    /// <item><b>A player's own confirmation is never overwritten by a model read.</b> They know what
+    /// they equipped; we are looking at a screenshot.</item>
+    /// <item><b>A text read is trusted immediately</b> — a weapon tooltip or the mastery screen names
+    /// the type in words, and text is what this model is good at.</item>
+    /// <item><b>An icon read has to happen twice</b> and agree. One is a guess; two independent
+    /// captures landing on the same pair is evidence. Until then it is stored unconfirmed, which is
+    /// enough to ask the player and not enough to drive advice silently.</item>
+    /// </list>
+    /// </summary>
+    private void RememberWeapons(string responseText)
+    {
+        var reading = TlObservationParser.ParseWeapons(responseText);
+
+        if (reading is null)
+        {
+            // Not a character sheet, or the model was not confident enough to report. Keeping the
+            // previous pair is right: weapons rarely change, and a blank would lose the class.
+            return;
+        }
+
+        var settings = _store.Load();
+        var game = settings.Game;
+
+        // The player's own answer outranks anything read off a screenshot. Only a genuine change of
+        // weapons should move it, and that arrives as a text read rather than an icon guess.
+        if (game.WeaponsConfirmed && !reading.SamePairAs(game.LastWeapons) && !reading.IsTextRead)
+        {
+            Core.Diagnostics.Log.Info(
+                $"Weapons: ignoring an icon read of {reading.ClassName} — "
+                + $"{TlClasses.Name(game.LastWeapons)} is confirmed by the player.");
+            return;
+        }
+
+        // A text read is good on its own. An icon read needs a second, agreeing sighting.
+        var confirmed = reading.IsTextRead
+            || (reading.SamePairAs(game.LastWeapons) && !game.WeaponsConfirmed);
+
+        if (reading.SamePairAs(game.LastWeapons) && game.WeaponsConfirmed == confirmed)
+        {
+            return;
+        }
+
+        Core.Diagnostics.Log.Info(
+            $"Weapons: {reading.ClassName} from {reading.Source ?? "an unstated source"} "
+            + $"({(confirmed ? "confirmed" : "unconfirmed, awaiting corroboration")}).");
+
+        _store.Save(settings with
+        {
+            Game = game with
+            {
+                LastWeapons = reading.Weapons,
+                WeaponsConfirmed = confirmed,
+            },
+        });
+    }
+
     private async Task<DerivedTargets?> ComputeTargetsAsync(TargetBuild target, HttpClient http)
     {
         try
@@ -453,31 +588,6 @@ internal sealed class TrayApplication : IDisposable
     /// wondering why nothing happens. Offering Settings turns a dead end into the one action that
     /// resolves it.</para>
     /// </summary>
-    private bool EnsureBuildConfigured(LoadstarSettings settings)
-    {
-        if (!string.IsNullOrWhiteSpace(settings.Game.BuildUrl))
-        {
-            return true;
-        }
-
-        var open = MessageBox.Show(
-            "Loadstar needs a Character Build URL before it can give advice.\n\n"
-            + "Every recommendation is measured against your target build — which stats to aim "
-            + "for, which slots are behind. Without one there is nothing to compare your character "
-            + "to, so no screenshot has been taken and nothing has been sent.\n\n"
-            + "Open Settings and paste a questlog.gg build URL now?",
-            "Loadstar — no target build",
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Information);
-
-        if (open == DialogResult.Yes)
-        {
-            ShowSettings();
-        }
-
-        return false;
-    }
-
     private void ShowBalloon(string title, string text, ToolTipIcon icon = ToolTipIcon.Info)
     {
         _tray.BalloonTipTitle = title;

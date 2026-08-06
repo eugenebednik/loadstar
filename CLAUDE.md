@@ -829,6 +829,68 @@ A hard daily cap makes this schedulable rather than grindable, which is exactly 
 advice should say plainly: there is no way to go faster, only a way to not miss days. Tab 7's
 **Abyssal Contract Token Bonus** and **Token Efficiency +7%** modify this stream.
 
+## Classes are weapon pairs — all 45, captured from questlog's own filter
+
+There is no class system. A character equips **two weapons** and the pair has a name. Ten weapons
+pair 45 ways and **all 45 are named classes** — `C(10,2) = 45`, no gaps.
+
+Captured 2026-08-06 from questlog's class filter by reading the URL slug each option produces
+(`?class=gauntlet-sword`), and held in `TlClasses`. **Not taken from community guides**: published
+lists still show 21 or 28 classes because they predate Spear, Orb or Gauntlets, and Orb and Gauntlet
+between them account for **17 of the 45**. Gauntlets shipped 2026-06-25 with Nix, so guide coverage
+of them is close to nil.
+
+Verified three ways: 45 names to 45 distinct pairs with none missing or repeated; every weapon
+appearing in exactly 9 classes; and the five the product owner named independently — Oracle, Seeker,
+Gladiator, Ravager, Bulwark — all matching.
+
+| Weapon | Its nine classes |
+| --- | --- |
+| `bow` Longbow | Impaler · Infiltrator · Liberator · Ranger · Scout · Scryer · Seeker · Strider · Warden |
+| `crossbow` | Battleweaver · Cavalier · Crucifix · Fury · Marauder · Outrider · Raider · Scorpion · Scout |
+| `dagger` | Berserker · Brawler · Darkblighter · Infiltrator · Lunarch · Ravager · Scorpion · Shadowdancer · Spellblade |
+| `gauntlet` | Bastion · Brawler · Bulwark · Channeler · Juggernaut · Marauder · Mystic · Skirmisher · Strider |
+| `orb` | Bulwark · Crucifix · Enigma · Guardian · Justicar · Lunarch · Oracle · Polaris · Scryer |
+| `spear` | Cavalier · Eradicator · Gladiator · Impaler · Polaris · Shadowdancer · Skirmisher · Steelheart · Voidlance |
+| `staff` | Battleweaver · Channeler · Disciple · Enigma · Eradicator · Invocator · Liberator · Sentinel · Spellblade |
+| `sword` Sword and Shield | Bastion · Berserker · Crusader · Disciple · Guardian · Raider · Steelheart · Templar · Warden |
+| `sword2h` Greatsword | Crusader · Gladiator · Juggernaut · Justicar · Outrider · Paladin · Ranger · Ravager · Sentinel |
+| `wand` Wand and Tome | Darkblighter · Fury · Invocator · Mystic · Oracle · Paladin · Seeker · Templar · Voidlance |
+
+**`sword` is Sword and Shield and `sword2h` is the Greatsword.** Confusing those two names a
+different class, and both appear in nine classes each, so there is no way to recover from it later.
+
+### This is what lets Loadstar stop demanding a build URL
+
+Two weapons name a class, and `searchCharacters` filters on **`mainHandWeapon` and `offHandWeapon`**
+with `sort=likes-month`. So the app can read the player's weapons off the character sheet, identify
+the class, and offer the builds people are actually liking *now* — instead of requiring them to go
+and find a questlog URL before it will say anything.
+
+Note `likes-month` rather than lifetime likes: a build with 200 lifetime likes and none this month
+was written for a patch that no longer exists. And note which filter names are real —
+`mainHandWeapon`/`offHandWeapon` filter, while `weaponTypes`, `weapons`, `class` and `sortBy` are
+**accepted and silently ignored**, returning the unfiltered top of the list. An ignored filter looks
+exactly like a successful query, so results are re-checked against the requested pair.
+
+### Weapon detection must be right, not plausible
+
+A wrong pair names a different class, and every recommendation afterwards is confidently aimed at a
+character the player is not playing. Nothing downstream contradicts it and the player cannot tell.
+This is the read with the worst failure mode in the product.
+
+The model is reliable at **text** and unreliable at **naming icons** — the rest of this file says so
+repeatedly, and the boss-schedule capture proved it when a badge a person could see plainly turned
+out to be three pixels after downsampling. Weapon slots on the character sheet are icons. So:
+
+- **Prefer text sources**, in order: a weapon **tooltip** (states the type outright), the **Weapon
+  Mastery** screen, the **skills** screen. The model reports which it used in `weaponsSource`.
+- **An icon read is stored unconfirmed** and must be seen twice, on separate captures, agreeing.
+- **The player's own confirmation always wins** and is never overwritten by an icon read.
+- Corroborate with numbers when only icons are available: the expanded sheet's **Range** (~30m means
+  ranged, and a melee weapon cannot be) and **Attack Speed** separate weapon families without any
+  icon recognition at all.
+
 ## PvP and PvE are different builds — measured, not assumed
 
 The tool must know which axis the player is on before it gives any gear or trait advice, and the

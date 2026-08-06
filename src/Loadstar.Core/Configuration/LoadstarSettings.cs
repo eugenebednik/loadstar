@@ -155,8 +155,62 @@ public sealed record OverlaySettings
 
 public sealed record GameSettings
 {
-    /// <summary>questlog.gg build URL, or the bare slug.</summary>
+    /// <summary>
+    /// questlog.gg build URL, or the bare slug. <b>Optional.</b>
+    ///
+    /// <para>It used to be required before any advice was given, which put a chore in front of the
+    /// first useful answer for no good reason: most of what the advice is built on is visible on the
+    /// screen. When it is set it still wins, because it states the player's intended axis and role —
+    /// the one thing a screenshot cannot reveal.</para>
+    /// </summary>
     public string? BuildUrl { get; init; }
+
+    /// <summary>
+    /// The two weapon ids last read off the player's character sheet, e.g. <c>["orb", "wand"]</c>.
+    ///
+    /// <para>Two weapons name a class (<see cref="Loadstar.Core.Configuration.GameSettings"/> has no
+    /// dependency on the table, but see <c>TlClasses</c>), which is what lets the app look up what the
+    /// community plays for that class and OFFER a build instead of demanding one.</para>
+    ///
+    /// <para>Persisted because the read and the use are necessarily on different turns: the model has
+    /// to see a character sheet before the weapons are known, and by then the request that would have
+    /// used them has already gone. Storing them means the offer is ready the next time the player asks
+    /// anything, rather than needing them to open the character sheet twice.</para>
+    ///
+    /// <para>Empty is the honest initial state, and it must never be guessed at — a wrong pair names a
+    /// different class entirely and would recommend builds for a character the player is not playing.</para>
+    /// </summary>
+    public IReadOnlyList<string> LastWeapons { get; init; } = [];
+
+    /// <summary>
+    /// Whether <see cref="LastWeapons"/> is settled, or still a single unconfirmed guess.
+    ///
+    /// <para><b>Weapon detection has to be right rather than plausible</b>, because nothing downstream
+    /// contradicts it: a wrong pair names a different class, and every recommendation afterwards is
+    /// confidently aimed at a character the player is not playing. So a pair earns this flag one of
+    /// three ways, and only these three:</para>
+    ///
+    /// <list type="number">
+    /// <item>The player said so — in Settings, or by answering the confirmation. Always wins.</item>
+    /// <item>The model read it from TEXT: a weapon tooltip, the Weapon Mastery screen, the skills
+    /// screen. It is reliable at text.</item>
+    /// <item>The model recognised the slot ARTWORK twice, on separate captures, and got the same
+    /// answer. One icon read is a guess; two agreeing is evidence.</item>
+    /// </list>
+    ///
+    /// <para>Unconfirmed weapons are still usable — they are what the confirmation question is built
+    /// from — but they must never silently drive advice as though they were known.</para>
+    /// </summary>
+    public bool WeaponsConfirmed { get; init; }
+
+    /// <summary>
+    /// Whether the player has already been offered a recommended build target.
+    ///
+    /// <para>Exists so the offer happens ONCE. A tool that asks the same setup question on every
+    /// capture is more annoying than one that never asks, and the offer is a footnote to a real answer
+    /// rather than the answer.</para>
+    /// </summary>
+    public bool BuildOfferShown { get; init; }
 
     /// <summary>
     /// Region slug driving the boss schedule. Uses questlog's own values — <c>americas</c>,
