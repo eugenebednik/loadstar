@@ -135,10 +135,15 @@
         "weeklySlots wins wherever both are present."
       ,
       "",
-      "SIEGE IS BIWEEKLY, not weekly. Verified from a live client 2026-08-05 by reading the map's",
-      "Daily tab across 21 days: 09/08 Sun 18:00 siege, 16/08 Sun EMPTY, 23/08 Sun 18:00 siege. Hence",
-      "everyDays 14 with an anchor -- a weekday-keyed slot alone would promise a siege every Sunday and",
-      "be wrong every other week.",
+      "SIEGE IS WEEKLY -- 18:00 every Sunday, same time, corrected 2026-08-06 by the product owner.",
+      "An earlier pass read 16/08 Sun as an empty row in the Daily panel and concluded biweekly. That",
+      "was a misread, and it was published. The everyDays/since machinery it motivated is kept because",
+      "it is tested and harmless, but nothing in this file uses it any more.",
+      "",
+      "THE DAILY TAB IS ONLY SIEGE AND ARCHBOSSES. Regular field bosses -- Talus, Excavator-9 and the",
+      "rest -- live on the HOURLY tab, are always running, and rotate. So on a day with archbosses BOTH",
+      "streams are live at once, and this file currently models only one of them. The hourly stream",
+      "stays generic Field Bosses; the archboss slots are the named ones.",
       "",
       "Field bosses ARE weekly, re-confirmed over the same 21 days: 17:00 and 20:00 on Tue, Wed, Fri",
       "and Sat; Thursday and Monday carry nothing at all. Slot COMPOSITION rotates (one boss at 17:00",
@@ -176,7 +181,7 @@
           { "time": "20:00", "type": "FieldBosses" }
         ],
         "Sunday": [
-          { "time": "18:00", "type": "Siege", "everyDays": 14, "since": "2026-08-09" }
+          { "time": "18:00", "type": "Siege" }
         ]
       },
       "dailySlots": [

@@ -247,8 +247,13 @@ public sealed class BossScheduleTests
         Assert.Contains(new DateTime(2026, 8, 16), dates);
     }
 
+    /// <summary>
+    /// Siege is WEEKLY. This test asserted the opposite until 2026-08-06, because a capture read
+    /// 16/08 Sun as an empty row and the conclusion was published. Kept pointing at the bundled data
+    /// so the same mistake cannot be reintroduced quietly.
+    /// </summary>
     [Fact]
-    public void BundledAmericasSiegeIsBiweekly()
+    public void BundledAmericasSiegeIsWeekly()
     {
         var schedule = BossSchedule.LoadBundled();
         var zone = TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles");
@@ -262,7 +267,8 @@ public sealed class BossScheduleTests
             .ToList();
 
         Assert.Contains(new DateTime(2026, 8, 9), sieges);
-        Assert.DoesNotContain(new DateTime(2026, 8, 16), sieges);
+        Assert.Contains(new DateTime(2026, 8, 16), sieges);
+        Assert.Contains(new DateTime(2026, 8, 23), sieges);
     }
     /// <summary>
     /// One slot, several bosses — the client shows five icons at 20:00. Names win over the generic
