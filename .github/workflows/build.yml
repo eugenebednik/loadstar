@@ -215,13 +215,35 @@ jobs:
           merge-multiple: true
           path: artifacts
 
+      # THE VERSION COMES OUT OF THE FILENAME, and that is the whole point of this step.
+      #
+      # The package job names installers Loadstar-<version>-x64-<lang>.msi, which is right for a
+      # tagged release — each tag is its own release, so nothing accumulates. On the ROLLING release
+      # it was a slow leak: this tag is reused on every push, and the upload action only replaces an
+      # asset when the FILENAME matches. A new version meant a new name meant a new asset, forever.
+      # It reached 262 assets and 15 GB before anyone noticed, growing ~600 MB per push, and the
+      # comment here claimed the opposite was happening.
+      #
+      # Stable names fix it and are better anyway: the download URL for a given language stops
+      # changing, which is what a "latest build" link is for. The version still travels — in the
+      # release title, the body, and the MSI's own ProductVersion.
+      - name: Give the rolling assets stable names
+        run: |
+          cd artifacts
+          for f in Loadstar-*-x64-*.msi; do
+            stable=$(echo "$f" | sed -E 's/^Loadstar-[0-9]+\.[0-9]+\.[0-9]+-x64-/Loadstar-x64-/')
+            [ "$f" = "$stable" ] || mv -- "$f" "$stable"
+          done
+          ls -1
+
       - name: Update rolling release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest-build
           name: Latest build (${{ needs.package.outputs.version }})
           prerelease: true
-          # Replaces the previous assets rather than accumulating them.
+          # Every filename here is now version-free, so each push REPLACES the previous asset
+          # instead of adding to it.
           files: artifacts/*.msi
           body: |
             Automatic build of `main` — version **${{ needs.package.outputs.version }}**
