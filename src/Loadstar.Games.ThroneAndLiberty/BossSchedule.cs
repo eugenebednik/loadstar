@@ -129,10 +129,16 @@ public sealed class BossSchedule
     /// every single day. It is <b>ADDITIVE</b>, expanded across all seven weekdays and merged on top,
     /// because both tabs are live at once and a day with archbosses shows both.</para>
     ///
+    /// <para><c>datedSlots</c> is also additive, and is for anything that does not repeat weekly:
+    /// monthly events, guild raids, and archboss slots whose composition was captured for particular
+    /// days. Each entry carries a <c>dates</c> list and appears on exactly those days. It is a separate
+    /// stream rather than weekday-keyed entries precisely so nobody has to work out which UTC weekday a
+    /// Pacific date lands on — getting that wrong is a whole-day error that still looks plausible.</para>
+    ///
     /// <para><c>dailySlots</c> is the older flat form and is a <b>FALLBACK</b> for
-    /// <c>weeklySlots</c>, not a third stream — it cannot express an empty day, which is why it was
+    /// <c>weeklySlots</c>, not another stream — it cannot express an empty day, which is why it was
     /// wrong. Additive versus fallback is the one distinction to keep straight when editing the JSON;
-    /// the two names are unhelpfully similar and only <c>hourlySlots</c> stacks.</para>
+    /// the names are unhelpfully similar and <c>dailySlots</c> is the only one that does not stack.</para>
     /// </summary>
     private static IReadOnlyDictionary<DayOfWeek, IReadOnlyList<ScheduleSlot>> ReadWeeklySlots(JsonElement region)
     {
@@ -158,14 +164,13 @@ public sealed class BossSchedule
             }
         }
 
-        if (!region.TryGetProperty("hourlySlots", out var hourly))
-        {
-            return week;
-        }
+        // Both additive streams go onto every weekday. The dated ones filter themselves down to their
+        // own days in ScheduleSlot.OccursOn, which is why they can be merged blindly here.
+        var everyDay = ReadSlots(Property(region, "hourlySlots"))
+            .Concat(ReadSlots(Property(region, "datedSlots")))
+            .ToArray();
 
-        var everyDay = ReadSlots(hourly);
-
-        if (everyDay.Count == 0)
+        if (everyDay.Length == 0)
         {
             return week;
         }
@@ -173,18 +178,22 @@ public sealed class BossSchedule
         foreach (var day in Enum.GetValues<DayOfWeek>())
         {
             // Re-sorted, not appended: NextSpawns stops walking as soon as it has enough spawns and
-            // therefore depends on each day's slots being in time order. Merging two already-sorted
-            // lists without sorting the result would make it return the wrong three.
+            // therefore depends on each day's slots being in time order. Merging already-sorted lists
+            // without sorting the result would make it return the wrong three.
             //
             // Duplicate times survive deliberately. Sunday 18:00 Pacific is BOTH the weekly siege and
             // an hourly field-boss slot, and collapsing them would hide one real event behind another.
             week[day] = week.TryGetValue(day, out var fromWeekly) && fromWeekly.Count > 0
                 ? [.. fromWeekly.Concat(everyDay).OrderBy(s => s.TimeOfDay)]
-                : everyDay;
+                : [.. everyDay.OrderBy(s => s.TimeOfDay)];
         }
 
         return week;
     }
+
+    /// <summary>A property if it is there, or a default element that <see cref="ReadSlots"/> reads as empty.</summary>
+    private static JsonElement Property(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) ? value : default;
 
     /// <summary>
     /// Reads one entry of a slot's <c>bosses</c> array.
@@ -274,6 +283,23 @@ public sealed class BossSchedule
                     ? parsedAnchor
                     : null;
 
+            // An explicit date list, which OVERRIDES the weekday and any period. This is how anything
+            // not weekly gets expressed: monthly events, guild raids, and archboss slots whose
+            // composition was captured for specific days.
+            //
+            // Deliberately not a "last Sunday of the month" rule. Slot times are UTC and the weekday
+            // rolls, so 17:30 Pacific on the last Sunday is 00:30 UTC on the following MONDAY — which
+            // is the last Monday of the month in most months and the FIRST Monday of the next one when
+            // the Sunday falls on the 31st. A rule that is right eleven times a year is worse than a
+            // list, because the twelfth failure is silent and lands on a PvP event a guild turned up
+            // for. When the list runs out the event stops appearing, which is the honest failure.
+            var dates = slot.TryGetProperty("dates", out var d) && d.ValueKind == JsonValueKind.Array
+                ? d.EnumerateArray()
+                    .Select(x => DateOnly.TryParse(x.GetString(), out var parsedDate) ? parsedDate : (DateOnly?)null)
+                    .OfType<DateOnly>()
+                    .ToArray()
+                : [];
+
             // A slot can hold SEVERAL bosses at one time — the client shows one icon at 17:00 and
             // five at 20:00 — so this is a list, not a name. Empty or absent means "not yet
             // identified", and the countdown falls back to the event type rather than inventing one.
@@ -289,7 +315,7 @@ public sealed class BossSchedule
                 ? m.GetString()
                 : null;
 
-            slots.Add(new ScheduleSlot(parsed, type ?? "Unknown", period, anchor, bosses, mode));
+            slots.Add(new ScheduleSlot(parsed, type ?? "Unknown", period, anchor, bosses, mode, dates));
         }
 
         return slots.OrderBy(s => s.TimeOfDay).ToArray();
@@ -331,11 +357,16 @@ public sealed class BossSchedule
 
         // Walk from yesterday so a slot that is "today" in server time but still ahead of the
         // player's instant is not skipped near a timezone boundary.
-        // Sixteen days, not eight. A biweekly slot can sit up to 13 days out — an off-week Sunday
-        // with siege as the only entry produced NOTHING, because the walk ended before the next
-        // occurrence. Caught by a test rather than in the field. The bound must exceed the longest
-        // recurrence period in the data, so raising a period means raising this too.
-        for (var dayOffset = -1; dayOffset <= 16 && spawns.Count < count; dayOffset++)
+        //
+        // FORTY DAYS, and the bound has been raised twice for the same reason: it must exceed the
+        // longest gap between occurrences in the data, or a sparse slot silently yields nothing. Eight
+        // days missed a biweekly slot sitting 13 days out; sixteen missed a monthly one, which can be
+        // 31 days out plus the month-length spread. Anything that stretches the gap further — a
+        // quarterly event, a longer dates gap — needs this raised again.
+        //
+        // Costs nothing in the normal case: the loop exits as soon as it has enough spawns, and the
+        // merged Americas schedule fills a count of three inside the first day.
+        for (var dayOffset = -1; dayOffset <= 40 && spawns.Count < count; dayOffset++)
         {
             var date = localNow.Date.AddDays(dayOffset);
 
@@ -428,6 +459,9 @@ public sealed class BossSchedule
     ///
     /// <para><paramref name="Mode"/> is the contest mode of the OCCURRENCE, for slots whose mode is
     /// known while their boss is not.</para>
+    ///
+    /// <para><paramref name="Dates"/> pins the slot to an explicit list and overrides everything else.
+    /// It is how monthly events, raids and per-capture archboss composition are expressed.</para>
     /// </summary>
     private sealed record ScheduleSlot(
         TimeSpan TimeOfDay,
@@ -435,14 +469,23 @@ public sealed class BossSchedule
         int PeriodDays = 7,
         DateOnly? Anchor = null,
         IReadOnlyList<ScheduledBoss>? Bosses = null,
-        string? Mode = null)
+        string? Mode = null,
+        IReadOnlyList<DateOnly>? Dates = null)
     {
         /// <summary>
-        /// Whether this slot happens on <paramref name="date"/>. Weekly slots (no anchor) always do —
-        /// the weekday lookup has already decided that. Anchored slots must land on the cycle.
+        /// Whether this slot happens on <paramref name="date"/>. Weekly slots (no anchor, no dates)
+        /// always do — the weekday lookup has already decided that. Anchored slots must land on the
+        /// cycle, and dated slots must be in the list.
         /// </summary>
         public bool OccursOn(DateOnly date)
         {
+            // Checked first, and exclusively: a dated slot happens on exactly those days and nowhere
+            // else, regardless of which weekday it was filed under.
+            if (Dates is { Count: > 0 })
+            {
+                return Dates.Contains(date);
+            }
+
             if (Anchor is not { } anchor || PeriodDays <= 1)
             {
                 return true;
@@ -595,8 +638,40 @@ public sealed record BossSpawn(
         "ArchBosses" => "Arch Bosses",
         "DynamicEvents" => "Dynamic Events",
         "Siege" => "Siege",
-        _ => EventType,
+        _ => Humanise(EventType),
     };
+
+    /// <summary>
+    /// Splits a PascalCase event type into words — <c>TaxDelivery</c> reads "Tax Delivery".
+    ///
+    /// <para>This exists so <b>the schedule can introduce an event type without a code change</b>. The
+    /// file is captured and published on the game's cadence rather than the app's, and requiring a
+    /// release to make a new type render properly would defeat the point of publishing it as data. The
+    /// cases above are only the ones whose spacing PascalCase cannot infer.</para>
+    /// </summary>
+    private static string Humanise(string type)
+    {
+        if (string.IsNullOrWhiteSpace(type))
+        {
+            return "Event";
+        }
+
+        var words = new System.Text.StringBuilder(type.Length + 4);
+
+        for (var i = 0; i < type.Length; i++)
+        {
+            // A capital that follows a lower-case letter starts a new word. Runs of capitals stay
+            // together, so an acronym is not shattered into single letters.
+            if (i > 0 && char.IsUpper(type[i]) && !char.IsUpper(type[i - 1]))
+            {
+                words.Append(' ');
+            }
+
+            words.Append(type[i]);
+        }
+
+        return words.ToString();
+    }
 
     /// <summary>Compact countdown, e.g. <c>1:23:45</c> or <c>18m 04s</c>.</summary>
     public string Countdown(TimeSpan remaining) => remaining switch

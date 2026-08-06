@@ -249,6 +249,38 @@
         "Written in PACIFIC order with localPst on every row, so this reads top-to-bottom against the",
         "client's own Hourly tab. The parser sorts by UTC time, so file order is presentation only."
       ],
+      "$datedComment": [
+        "datedSlots is for anything that does NOT repeat weekly. Each entry lists the UTC dates it",
+        "happens on and appears on exactly those days -- no weekday key, because working out which UTC",
+        "weekday a Pacific date falls on is a whole-day error that still looks plausible.",
+        "",
+        "WHEN THE DATES RUN OUT THE EVENT STOPS APPEARING. That is deliberate. The in-game panel only",
+        "ever shows about three weeks ahead, so a longer list would be extrapolation, and a wrong date on",
+        "a PvP event is a guild turning up to nothing. Recapture instead: /capture-boss-schedule.",
+        "",
+        "There is no 'last Sunday of the month' rule and this is not an oversight. Slot times are UTC",
+        "and the weekday rolls: 17:30 Pacific on the last Sunday is 00:30 UTC the following MONDAY,",
+        "which is the last Monday in most months and the FIRST Monday of the next month when that Sunday",
+        "falls on the 31st. A rule that is right eleven times a year is worse than a list."
+      ],
+      "datedSlots": [
+        {
+          "time": "00:30",
+          "type": "TaxDelivery",
+          "mode": "guild",
+          "localPst": "17:30",
+          "$note": [
+            "Vienta tax delivery -- a PvP event, reported by the product owner 2026-08-06 as running on",
+            "the last Sunday of the month. Only 23/08 was observed directly (17:30 Pacific, ahead of the",
+            "18:00 siege); the dates below are the last Sunday of each following month, which is the",
+            "rule as stated rather than as measured. Confirm each against the client before trusting it,",
+            "and note the DST boundary in November shifts the UTC time if this is wall-clock anchored.",
+            "",
+            "Dates are UTC and therefore MONDAYS -- 30/08 Pacific Sunday is 31/08 UTC Monday."
+          ],
+          "dates": ["2026-08-31", "2026-09-28", "2026-10-26"]
+        }
+      ],
       "hourlySlots": [
         {"time": "18:00", "type": "FieldBosses", "localPst": "11:00"},
         {"time": "21:00", "type": "FieldBosses", "localPst": "14:00"},

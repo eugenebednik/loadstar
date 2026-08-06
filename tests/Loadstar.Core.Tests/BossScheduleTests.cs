@@ -711,4 +711,126 @@ public sealed class BossScheduleTests
         Assert.Equal(Utc(2026, 8, 12, 1, 0), spawn.SpawnsAt);
         Assert.True(spawn.IsFieldBoss);
     }
+
+    /// <summary>
+    /// A dated slot happens on exactly its listed days and nowhere else — that is the whole point, and
+    /// it is what makes monthly events expressible without a "last Sunday of the month" rule that the
+    /// UTC weekday roll would break once a year.
+    /// </summary>
+    [Fact]
+    public void DatedSlotHappensOnlyOnItsListedDates()
+    {
+        const string json = """
+            {
+              "timeBasis": "utc",
+              "regions": {
+                "Americas": {
+                  "datedSlots": [
+                    { "time": "00:30", "type": "TaxDelivery", "mode": "guild",
+                      "dates": ["2026-08-31", "2026-09-28"] }
+                  ]
+                }
+              }
+            }
+            """;
+
+        var schedule = BossSchedule.Parse(json);
+
+        // The NEXT occurrence is findable from any point before it, which is the property that matters:
+        // the walk bound only has to exceed the gap between consecutive occurrences, not span the whole
+        // list. Asking for two monthly events at once genuinely does exceed one window, and no caller
+        // needs that.
+        Assert.Equal(
+            Utc(2026, 8, 31, 0, 30),
+            Assert.Single(schedule.NextSpawns(Utc(2026, 8, 1), "Americas", TimeZoneInfo.Utc, count: 3)).SpawnsAt);
+
+        Assert.Equal(
+            Utc(2026, 9, 28, 0, 30),
+            Assert.Single(schedule.NextSpawns(Utc(2026, 9, 1), "Americas", TimeZoneInfo.Utc, count: 3)).SpawnsAt);
+
+        // And once the list is exhausted the event STOPS, rather than repeating on a guessed cadence.
+        // That is the deliberate failure mode: a wrong date on a PvP event is a guild turning up to
+        // nothing, so it goes quiet and waits to be recaptured.
+        Assert.Empty(schedule.NextSpawns(Utc(2026, 10, 1), "Americas", TimeZoneInfo.Utc, count: 1));
+    }
+
+    /// <summary>
+    /// Dated slots are checked on EVERY weekday. Filing them under a weekday key would mean working out
+    /// which UTC weekday a Pacific date lands on, and getting that wrong is a whole-day error that
+    /// still looks plausible.
+    /// </summary>
+    [Fact]
+    public void DatedSlotsAreFoundWhicheverWeekdayTheDateFallsOn()
+    {
+        const string json = """
+            {
+              "timeBasis": "utc",
+              "regions": {
+                "Americas": {
+                  "weeklySlots": { "Monday": [], "Tuesday": [], "Wednesday": [], "Thursday": [],
+                                   "Friday": [], "Saturday": [], "Sunday": [] },
+                  "datedSlots": [
+                    { "time": "12:00", "type": "GuildRaid",
+                      "dates": ["2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15"] }
+                  ]
+                }
+              }
+            }
+            """;
+
+        // Wednesday through Saturday, from an explicitly empty weekday table.
+        var spawns = BossSchedule.Parse(json).NextSpawns(Utc(2026, 8, 12), "Americas", TimeZoneInfo.Utc, count: 4);
+
+        Assert.Equal(4, spawns.Count);
+        Assert.Equal(
+            [DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday],
+            spawns.Select(s => s.SpawnsAt.DayOfWeek));
+    }
+
+    /// <summary>
+    /// An event type the code has never heard of still renders as words. This is what lets the schedule
+    /// introduce a type without a release — the file is published on the game's cadence, not the app's.
+    /// </summary>
+    [Theory]
+    [InlineData("TaxDelivery", "Tax Delivery")]
+    [InlineData("GuildRaid", "Guild Raid")]
+    [InlineData("DimensionalTrial", "Dimensional Trial")]
+    [InlineData("Siege", "Siege")]
+    [InlineData("PvPEvent", "Pv PEvent")]
+    public void UnknownEventTypesRenderAsWordsRatherThanRaw(string type, string expected)
+    {
+        // The PvPEvent row is the LIMIT, asserted so it is not mistaken for a capability: a run of
+        // capitals is genuinely ambiguous — "PvP" then "Event" is not recoverable from casing alone —
+        // and the humaniser does not guess. Any type whose spacing matters needs an explicit case in
+        // GenericName. Name types plainly (TaxDelivery, GuildRaid) and this never comes up.
+        Assert.Equal(expected, new BossSpawn(DateTimeOffset.Now, type, TimeSpan.Zero).GenericName);
+    }
+
+    /// <summary>
+    /// The bundled tax delivery: a guild PvP event at 17:30 Pacific, ahead of the 18:00 siege, on the
+    /// dates captured rather than on a monthly rule.
+    /// </summary>
+    [Fact]
+    public void BundledTaxDeliveryIsAGuildEventBeforeTheSiege()
+    {
+        var schedule = BossSchedule.LoadBundled();
+        var pacific = TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles");
+
+        var tax = schedule
+            .NextSpawns(Utc(2026, 8, 30), "Americas", pacific, count: 40)
+            .Where(s => s.EventType == "TaxDelivery")
+            .ToList();
+
+        var first = Assert.Single(tax);
+        var local = TimeZoneInfo.ConvertTime(first.SpawnsAt, pacific);
+
+        // 17:30 Pacific on a Sunday — the last Sunday of August 2026.
+        Assert.Equal(DayOfWeek.Sunday, local.DayOfWeek);
+        Assert.Equal(new DateTime(2026, 8, 30), local.Date);
+        Assert.Equal(new TimeSpan(17, 30, 0), local.TimeOfDay);
+
+        // PvP, and labelled without a code change for the type.
+        Assert.True(first.HasGuildContest);
+        Assert.Equal("Tax Delivery", first.DisplayName);
+    }
 }
