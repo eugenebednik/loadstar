@@ -88,4 +88,55 @@ public sealed class TlKnowledgePackTests
         Assert.Equal(first, second);
         Assert.DoesNotContain(DateTime.UtcNow.Year.ToString() + "-", first, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// The per-class profiles are measured data, so what matters is that the pack carries the CAVEATS
+    /// with the numbers. A share of trait picks across strangers' builds reads exactly like a stat
+    /// target, and the model will present it as one unless told not to.
+    /// </summary>
+    [Theory]
+    [InlineData("NOT as a target", "the framing that stops a measurement becoming a benchmark")]
+    [InlineData("questlog is unmoderated", "why popularity is not proof")]
+    [InlineData("Popularity is self-reinforcing", "the copying feedback loop")]
+    [InlineData("Author tags are unusable", "the negative finding — 11% coverage, 12 classes with none")]
+    [InlineData("Ask the player their axis", "what to do instead of inferring PvE/PvP from a class")]
+    [InlineData("A trait at 1.0x is the meta, not the class", "lift over baseline, not raw frequency")]
+    [InlineData("too few to characterise", "classes below threshold are marked, not filled in")]
+    public void ClassProfilesShipWithTheirCaveats(string fragment, string why)
+    {
+        Assert.True(TlKnowledgePack.Text.Contains(fragment, StringComparison.Ordinal), why);
+    }
+
+    /// <summary>
+    /// Every class must appear, or the model will silently have nothing to say about the ones missing —
+    /// and the classes most likely to be dropped are the newest, which are the ones no community guide
+    /// covers either.
+    /// </summary>
+    [Fact]
+    public void EveryClassAppearsInTheProfiles()
+    {
+        foreach (var name in TlClasses.All)
+        {
+            Assert.True(
+                TlKnowledgePack.Text.Contains($"### {name} —", StringComparison.Ordinal),
+                $"{name} has no profile section");
+        }
+    }
+
+    /// <summary>
+    /// The three near-universal traits must be named as such. Without the baseline, a per-class
+    /// frequency of 85% reads as a strong class signal when it is just the game's meta.
+    /// </summary>
+    [Fact]
+    public void ProfilesNameTheUniversalTraitsSoTheyAreNotMistakenForSignal()
+    {
+        foreach (var universal in new[] { "all_double_attack", "all_accuracy", "all_critical_attack" })
+        {
+            Assert.Contains(universal, TlKnowledgePack.Text, StringComparison.Ordinal);
+        }
+
+        // And the stat baseline, for the same reason: Perception leads everywhere, so a class leading
+        // on Perception is not deviating.
+        Assert.Contains("Perception dominates everywhere", TlKnowledgePack.Text, StringComparison.Ordinal);
+    }
 }

@@ -15,3 +15,14 @@ settings.local.json
 # Captures may contain other players' names. Never committed.
 captures/
 *.capture.png
+
+# Harvest cache for tools/class-profiles — 2337 raw questlog build records.
+#
+# NOT committed, deliberately. It is someone else's content plus other players' character names,
+# usernames and avatar URLs, and this project already ruled that redistributing another site's data
+# outside their own sanctioned mechanism is not granted to us (see the TLDB note in CLAUDE.md). The
+# DERIVED aggregate profiles are our own analysis and do ship; the raw records do not.
+#
+# Rebuilding it is one command and about two minutes:
+#   python tools/class-profiles/build-class-profiles.py
+tools/class-profiles/harvest-cache.json
