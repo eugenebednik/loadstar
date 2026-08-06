@@ -7,13 +7,26 @@ namespace Loadstar.Games.ThroneAndLiberty;
 /// Computes world boss and dynamic-event spawn times locally.
 ///
 /// <para>There is no spawn API to poll — Amazon never exposed one, which is why every third-party
-/// timer computes the same way. The calendar is a fixed weekly grid, so region + server timezone +
-/// wall-clock slot is enough. That makes this offline, rate-limit-free, and immune to a third-party
-/// site changing its markup.</para>
+/// timer computes the same way. The calendar is a fixed weekly grid, so region + slot table is
+/// enough. That makes this offline, rate-limit-free, and immune to a third-party site changing its
+/// markup.</para>
 ///
-/// <para>Times are stored as <b>server-local wall clock</b> and converted at read time, never as
-/// precomputed UTC instants. Storing instants would silently shift every entry twice a year when
-/// daylight saving moves.</para>
+/// <para><b>The game runs TWO schedules at once</b>, which its map exposes as separate tabs, and a
+/// model expressing only one is wrong on most days:</para>
+///
+/// <list type="bullet">
+/// <item>The <b>Daily</b> tab — siege and archbosses, per weekday, with days that carry nothing.
+/// Read from <c>weeklySlots</c>.</item>
+/// <item>The <b>Hourly</b> tab — the regular field bosses, seven slots <b>every</b> day, composition
+/// rotating. Read from <c>hourlySlots</c>.</item>
+/// </list>
+///
+/// <para>Both are live simultaneously, so they are merged into one per-weekday table at parse time
+/// and a day with archbosses legitimately yields both. Before the merge, a weekday the Daily tab
+/// leaves empty produced a countdown to something two days out — three rows of overlay saying
+/// nothing actionable — while seven field bosses were actually spawning that evening.</para>
+///
+/// <para>See <see cref="TimesAreUtc"/> for how slot times are anchored.</para>
 /// </summary>
 public sealed class BossSchedule
 {
@@ -106,12 +119,20 @@ public sealed class BossSchedule
     }
 
     /// <summary>
-    /// Reads a region's slots, per weekday.
+    /// Reads a region's two slot streams and merges them into one per-weekday table.
     ///
-    /// <para><c>weeklySlots</c> wins when present, because the schedule genuinely differs by day —
-    /// a live client shows Thursday and Monday empty and Sunday running siege at a time no other day
-    /// uses. <c>dailySlots</c> is the older flat form and is expanded across all seven days only as a
-    /// fallback; it cannot express an empty day, which is why it was wrong.</para>
+    /// <para><c>weeklySlots</c> is the map's <b>Daily</b> tab — siege and archbosses. It is per
+    /// weekday because the schedule genuinely differs by day: a live client shows Thursday and Monday
+    /// empty and Sunday running siege at a time no other day uses.</para>
+    ///
+    /// <para><c>hourlySlots</c> is the map's <b>Hourly</b> tab — the regular field bosses, which run
+    /// every single day. It is <b>ADDITIVE</b>, expanded across all seven weekdays and merged on top,
+    /// because both tabs are live at once and a day with archbosses shows both.</para>
+    ///
+    /// <para><c>dailySlots</c> is the older flat form and is a <b>FALLBACK</b> for
+    /// <c>weeklySlots</c>, not a third stream — it cannot express an empty day, which is why it was
+    /// wrong. Additive versus fallback is the one distinction to keep straight when editing the JSON;
+    /// the two names are unhelpfully similar and only <c>hourlySlots</c> stacks.</para>
     /// </summary>
     private static IReadOnlyDictionary<DayOfWeek, IReadOnlyList<ScheduleSlot>> ReadWeeklySlots(JsonElement region)
     {
@@ -126,11 +147,8 @@ public sealed class BossSchedule
                     week[parsedDay] = ReadSlots(day.Value);
                 }
             }
-
-            return week;
         }
-
-        if (region.TryGetProperty("dailySlots", out var daily))
+        else if (region.TryGetProperty("dailySlots", out var daily))
         {
             var slots = ReadSlots(daily);
 
@@ -138,6 +156,31 @@ public sealed class BossSchedule
             {
                 week[day] = slots;
             }
+        }
+
+        if (!region.TryGetProperty("hourlySlots", out var hourly))
+        {
+            return week;
+        }
+
+        var everyDay = ReadSlots(hourly);
+
+        if (everyDay.Count == 0)
+        {
+            return week;
+        }
+
+        foreach (var day in Enum.GetValues<DayOfWeek>())
+        {
+            // Re-sorted, not appended: NextSpawns stops walking as soon as it has enough spawns and
+            // therefore depends on each day's slots being in time order. Merging two already-sorted
+            // lists without sorting the result would make it return the wrong three.
+            //
+            // Duplicate times survive deliberately. Sunday 18:00 Pacific is BOTH the weekly siege and
+            // an hourly field-boss slot, and collapsing them would hide one real event behind another.
+            week[day] = week.TryGetValue(day, out var fromWeekly) && fromWeekly.Count > 0
+                ? [.. fromWeekly.Concat(everyDay).OrderBy(s => s.TimeOfDay)]
+                : everyDay;
         }
 
         return week;
@@ -238,7 +281,15 @@ public sealed class BossSchedule
                 ? b.EnumerateArray().Select(ReadBoss).OfType<ScheduledBoss>().ToArray()
                 : [];
 
-            slots.Add(new ScheduleSlot(parsed, type ?? "Unknown", period, anchor, bosses));
+            // Contest mode on the SLOT, which is a different claim from mode on a boss. The two daily
+            // guild slots (18:30 and 21:30 Pacific) are guild PvP at a fixed time while the boss that
+            // fills them rotates, so the mode is known and the name is not. Putting it here is what
+            // lets the countdown say "Guild Boss" without inventing which boss it is.
+            var mode = slot.TryGetProperty("mode", out var m) && m.ValueKind == JsonValueKind.String
+                ? m.GetString()
+                : null;
+
+            slots.Add(new ScheduleSlot(parsed, type ?? "Unknown", period, anchor, bosses, mode));
         }
 
         return slots.OrderBy(s => s.TimeOfDay).ToArray();
@@ -308,7 +359,7 @@ public sealed class BossSchedule
                     continue;
                 }
 
-                spawns.Add(new BossSpawn(spawnAt, slot.EventType, spawnAt - now, slot.Bosses));
+                spawns.Add(new BossSpawn(spawnAt, slot.EventType, spawnAt - now, slot.Bosses, slot.Mode));
 
                 if (spawns.Count >= count)
                 {
@@ -367,17 +418,24 @@ public sealed class BossSchedule
     }
 
     /// <summary>
-    /// One scheduled slot. <paramref name="PeriodDays"/> and <paramref name="Anchor"/> exist because
-    /// not everything repeats weekly: siege runs on ALTERNATING Sundays, observed in a live client on
-    /// 09/08 and 23/08 with 16/08 empty. A weekday-keyed schedule alone would promise a siege every
-    /// Sunday and be wrong every other week.
+    /// One scheduled slot.
+    ///
+    /// <para><paramref name="PeriodDays"/> and <paramref name="Anchor"/> express a recurrence longer
+    /// than a week. <b>Nothing in the shipped data uses them.</b> They were added for a siege believed
+    /// to run on alternating Sundays; that reading came from a misread capture and siege is weekly.
+    /// Kept because they are tested and a longer cycle is plausible for something else — but a slot
+    /// that carries them is making a claim about several weeks of observation.</para>
+    ///
+    /// <para><paramref name="Mode"/> is the contest mode of the OCCURRENCE, for slots whose mode is
+    /// known while their boss is not.</para>
     /// </summary>
     private sealed record ScheduleSlot(
         TimeSpan TimeOfDay,
         string EventType,
         int PeriodDays = 7,
         DateOnly? Anchor = null,
-        IReadOnlyList<ScheduledBoss>? Bosses = null)
+        IReadOnlyList<ScheduledBoss>? Bosses = null,
+        string? Mode = null)
     {
         /// <summary>
         /// Whether this slot happens on <paramref name="date"/>. Weekly slots (no anchor) always do —
@@ -442,10 +500,16 @@ public sealed record ScheduledBoss
     /// Whether this is a guild-only PvP contest. Matches both the badge vocabulary (<c>pvp</c>) and the
     /// tooltip's (<c>guild</c>), since the capture may reasonably record either.
     /// </summary>
-    public bool IsGuildContest =>
-        Mode is not null
-        && (Mode.Equals("pvp", StringComparison.OrdinalIgnoreCase)
-            || Mode.Equals("guild", StringComparison.OrdinalIgnoreCase));
+    public bool IsGuildContest => IsGuildMode(Mode);
+
+    /// <summary>
+    /// The mode vocabulary, shared with the slot-level mode on <see cref="BossSpawn"/> so a guild
+    /// contest is recognised identically whether the capture recorded it per boss or per slot.
+    /// </summary>
+    internal static bool IsGuildMode(string? mode) =>
+        mode is not null
+        && (mode.Equals("pvp", StringComparison.OrdinalIgnoreCase)
+            || mode.Equals("guild", StringComparison.OrdinalIgnoreCase));
 
     public bool IsArchboss => Kind?.Equals("archboss", StringComparison.OrdinalIgnoreCase) ?? false;
 
@@ -457,7 +521,8 @@ public sealed record BossSpawn(
     DateTimeOffset SpawnsAt,
     string EventType,
     TimeSpan Until,
-    IReadOnlyList<ScheduledBoss>? Bosses = null)
+    IReadOnlyList<ScheduledBoss>? Bosses = null,
+    string? Mode = null)
 {
     /// <summary>Bosses for this slot, empty when the schedule has not identified them yet.</summary>
     public IReadOnlyList<ScheduledBoss> Named => Bosses ?? [];
@@ -466,16 +531,25 @@ public sealed record BossSpawn(
     public IReadOnlyList<string> Names => Named.Select(b => b.Name).ToArray();
 
     /// <summary>
-    /// True when any boss in this slot is a guild contest.
+    /// True when this occurrence is a guild contest — either the slot itself is one, or a boss in it is.
     ///
     /// <para>The single most actionable thing the mode badge buys: a player without a guild cannot
     /// take part at all, so telling them to travel wastes their evening. It also flips preparation
     /// advice to the PvP stat axis. Unknown mode is NOT treated as guild — absent means unread, and
     /// guessing here is the error that matters.</para>
+    ///
+    /// <para>The slot-level source is why this is more than a scan of <see cref="Named"/>: the two
+    /// daily guild slots have a known mode and a rotating, unnamed boss.</para>
     /// </summary>
-    public bool HasGuildContest => Named.Any(b => b.IsGuildContest);
+    public bool HasGuildContest => ScheduledBoss.IsGuildMode(Mode) || Named.Any(b => b.IsGuildContest);
 
     public bool IsFieldBoss => EventType.Equals("FieldBosses", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The Daily tab's stream. Kept distinct from <see cref="IsFieldBoss"/> because both streams run at
+    /// once, and two rows that both read "Field Bosses" hide the one worth organising for.
+    /// </summary>
+    public bool IsArchBoss => EventType.Equals("ArchBosses", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Scheduled guild PvP, not a boss. Sunday's single slot is siege, and labelling it as a boss
@@ -484,16 +558,41 @@ public sealed record BossSpawn(
     public bool IsSiege => EventType.Equals("Siege", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
+    /// Filler from the legacy questlog table, and the one event type not worth travelling for. Only the
+    /// old <c>dailySlots</c> form produces these.
+    /// </summary>
+    public bool IsDynamicEvent => EventType.Equals("DynamicEvents", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     /// Label for the overlay. Names when the schedule has them — several joined, since a slot can hold
     /// more than one boss — and the generic event type when it does not. Never a guess: an unnamed slot
     /// reads "Field Bosses", which is true, rather than a plausible boss that is not spawning.
     /// </summary>
-    public string DisplayName => Names.Count > 0 ? string.Join(", ", Names) : GenericName;
+    public string DisplayName
+    {
+        get
+        {
+            if (Names.Count == 0)
+            {
+                return GenericName;
+            }
+
+            var named = string.Join(", ", Names);
+
+            // The marker uses the client's own tooltip vocabulary, and it is not decoration: a player
+            // without a guild is locked out, so an unmarked row sends them across the map for a contest
+            // they cannot enter.
+            return HasGuildContest ? $"{named} [Guild]" : named;
+        }
+    }
 
     /// <summary>The event-type label, used when no bosses are named.</summary>
     public string GenericName => EventType switch
     {
-        "FieldBosses" => "Field Bosses",
+        // A guild slot names itself even with no boss identified, because "which boss" is the part
+        // nobody has read while "guild only" is the part that decides whether to set out at all.
+        "FieldBosses" => HasGuildContest ? "Guild Boss" : "Field Bosses",
+        "ArchBosses" => "Arch Bosses",
         "DynamicEvents" => "Dynamic Events",
         "Siege" => "Siege",
         _ => EventType,

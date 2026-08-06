@@ -161,8 +161,13 @@ public sealed class BossScheduleTests
         Assert.True(schedule.HasSchedule("americas"));
         Assert.Equal(3, schedule.ResetHourLocal);
 
-        var sunday = schedule.NextSpawns(LocalNewYork(2026, 8, 9, 6, 0), "americas", NewYork, count: 1);
-        Assert.True(Assert.Single(sunday).IsSiege);
+        // Siege is somewhere in Sunday's spawns, not necessarily the FIRST of them. This asked for
+        // count: 1 until the two-stream merge, when the hourly field bosses at 11:00 and 14:00 Pacific
+        // started landing between Sunday morning and the 18:00 siege — which is the merge working, not
+        // a regression.
+        var sunday = schedule.NextSpawns(LocalNewYork(2026, 8, 9, 6, 0), "americas", NewYork, count: 10);
+
+        Assert.Contains(sunday, s => s.IsSiege);
     }
 
     [Fact]
@@ -258,10 +263,13 @@ public sealed class BossScheduleTests
         var schedule = BossSchedule.LoadBundled();
         var zone = TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles");
 
+        // count: 200, up from 40. The merged schedule yields eight or nine spawns a day, so 40 no
+        // longer reaches past the first Sunday and the test failed on the very data it was written to
+        // protect. The count has to exceed the walk window's worth of spawns, not a guessed few.
         var sieges = schedule
             .NextSpawns(
                 new DateTimeOffset(2026, 8, 8, 12, 0, 0, zone.GetUtcOffset(new DateTime(2026, 8, 8))),
-                "Americas", zone, count: 40)
+                "Americas", zone, count: 200)
             .Where(s => s.IsSiege)
             .Select(s => TimeZoneInfo.ConvertTime(s.SpawnsAt, zone).Date)
             .ToList();
@@ -344,7 +352,11 @@ public sealed class BossScheduleTests
         // The nameless entry is dropped rather than kept as a blank row.
         Assert.Equal(2, spawn.Named.Count);
         Assert.Equal(["Ramux", "Talus"], spawn.Names);
-        Assert.Equal("Ramux, Talus", spawn.DisplayName);
+
+        // The [Guild] marker is part of the label, not just a flag on the model. This assertion read
+        // "Ramux, Talus" until the two-stream merge, which documented the gap rather than the
+        // behaviour: a guildless player shown that row travels to a contest they are locked out of.
+        Assert.Equal("Ramux, Talus [Guild]", spawn.DisplayName);
 
         var ramux = spawn.Named[0];
         Assert.Equal("Stillreach", ramux.Zone);
@@ -467,5 +479,236 @@ public sealed class BossScheduleTests
 
         // 17:00 in the supplied zone, exactly as before.
         Assert.Equal(17, TimeZoneInfo.ConvertTime(spawn.SpawnsAt, zone).Hour);
+    }
+
+    private static DateTimeOffset Utc(int year, int month, int day, int hour = 0, int minute = 0) =>
+        new(year, month, day, hour, minute, 0, TimeSpan.Zero);
+
+    /// <summary>
+    /// The two streams are concurrent, not alternatives. The game splits them across the map's Daily
+    /// and Hourly tabs and a day with archbosses shows both, so the merged table must too.
+    /// </summary>
+    [Fact]
+    public void BothStreamsAppearOnADayThatHasArchbosses()
+    {
+        const string json = """
+            {
+              "timeBasis": "utc",
+              "regions": {
+                "Americas": {
+                  "hourlySlots": [ { "time": "04:00", "type": "FieldBosses" } ],
+                  "weeklySlots": {
+                    "Wednesday": [ { "time": "03:00", "type": "ArchBosses" } ]
+                  }
+                }
+              }
+            }
+            """;
+
+        // Wednesday 2026-08-12, before either slot.
+        var spawns = BossSchedule.Parse(json).NextSpawns(Utc(2026, 8, 12), "Americas", TimeZoneInfo.Utc, count: 2);
+
+        Assert.Equal(2, spawns.Count);
+
+        // Chronological, and the archboss row is distinguishable from the field-boss one.
+        Assert.Equal(Utc(2026, 8, 12, 3, 0), spawns[0].SpawnsAt);
+        Assert.True(spawns[0].IsArchBoss);
+        Assert.Equal("Arch Bosses", spawns[0].DisplayName);
+
+        Assert.Equal(Utc(2026, 8, 12, 4, 0), spawns[1].SpawnsAt);
+        Assert.True(spawns[1].IsFieldBoss);
+        Assert.Equal("Field Bosses", spawns[1].DisplayName);
+    }
+
+    /// <summary>
+    /// THE BUG THE MERGE FIXES, in the exact shape it was reported: "there is a third field boss that
+    /// says it is in 48h 27m. This is not correct, there would be more bosses today."
+    ///
+    /// <para>The Daily tab leaves Thursday and Monday (Pacific) empty, so before the merge a Thursday
+    /// morning found nothing until Friday evening — a countdown a day and a half out, while seven field
+    /// bosses were in fact spawning that same evening.</para>
+    /// </summary>
+    [Fact]
+    public void HourlyStreamFillsWeekdaysTheDailyTabLeavesEmpty()
+    {
+        var schedule = BossSchedule.LoadBundled();
+        var pacific = TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles");
+
+        // Thursday 2026-08-06, 09:00 Pacific — a day with no archbosses and no siege.
+        var next = schedule.NextSpawns(Utc(2026, 8, 6, 16, 0), "Americas", pacific, count: 1);
+
+        var spawn = Assert.Single(next);
+        var local = TimeZoneInfo.ConvertTime(spawn.SpawnsAt, pacific);
+
+        Assert.Equal(DayOfWeek.Thursday, local.DayOfWeek);
+        Assert.Equal(11, local.Hour);
+
+        // Two hours out, not thirty-two. That difference is the whole point.
+        Assert.True(spawn.Until < TimeSpan.FromHours(3), $"next spawn was {spawn.Until} away");
+    }
+
+    /// <summary>
+    /// A guild slot's mode is known while its boss is not — the two daily guild slots sit at fixed
+    /// times and rotate their occupant. So mode has to live on the slot, and the label has to say
+    /// "guild" without inventing a name.
+    /// </summary>
+    [Fact]
+    public void GuildSlotIsMarkedWithoutNamingABoss()
+    {
+        const string json = """
+            {
+              "timeBasis": "utc",
+              "regions": {
+                "Americas": {
+                  "hourlySlots": [
+                    { "time": "01:00", "type": "FieldBosses" },
+                    { "time": "01:30", "type": "FieldBosses", "mode": "guild" }
+                  ]
+                }
+              }
+            }
+            """;
+
+        var spawns = BossSchedule.Parse(json).NextSpawns(Utc(2026, 8, 12), "Americas", TimeZoneInfo.Utc, count: 2);
+
+        Assert.Equal(2, spawns.Count);
+
+        // The peace slot must NOT pick up the guild marker from its neighbour.
+        Assert.False(spawns[0].HasGuildContest);
+        Assert.Equal("Field Bosses", spawns[0].DisplayName);
+
+        // The guild slot names itself, with no boss identified and none invented.
+        Assert.True(spawns[1].HasGuildContest);
+        Assert.Empty(spawns[1].Names);
+        Assert.Equal("Guild Boss", spawns[1].DisplayName);
+    }
+
+    /// <summary>The hourly stream stands alone — a region may have it and no weekday table at all.</summary>
+    [Fact]
+    public void HourlySlotsWorkWithoutAWeeklyTable()
+    {
+        const string json = """
+            {
+              "timeBasis": "utc",
+              "regions": {
+                "Americas": { "hourlySlots": [ { "time": "04:00", "type": "FieldBosses" } ] }
+              }
+            }
+            """;
+
+        var schedule = BossSchedule.Parse(json);
+
+        Assert.True(schedule.HasSchedule("Americas"));
+        Assert.Contains("americas", schedule.PopulatedRegions);
+
+        // Every day, so three consecutive days.
+        var spawns = schedule.NextSpawns(Utc(2026, 8, 12), "Americas", TimeZoneInfo.Utc, count: 3);
+
+        Assert.Equal([Utc(2026, 8, 12, 4, 0), Utc(2026, 8, 13, 4, 0), Utc(2026, 8, 14, 4, 0)],
+            spawns.Select(s => s.SpawnsAt));
+    }
+
+    /// <summary>
+    /// The bundled hourly stream: seven slots on every single day, verified on a UTC day the weekday
+    /// table leaves empty so nothing else can be inflating the count.
+    /// </summary>
+    [Fact]
+    public void BundledHourlyStreamRunsSevenSlotsEveryDay()
+    {
+        var schedule = BossSchedule.LoadBundled();
+
+        // UTC Tuesday 2026-08-11 carries no weeklySlots entries at all.
+        var day = schedule
+            .NextSpawns(Utc(2026, 8, 11), "Americas", TimeZoneInfo.Utc, count: 12)
+            .Where(s => s.SpawnsAt < Utc(2026, 8, 12))
+            .ToList();
+
+        Assert.Equal(7, day.Count);
+        Assert.All(day, s => Assert.True(s.IsFieldBoss));
+        Assert.DoesNotContain(day, s => s.IsArchBoss);
+
+        // Exactly two of the seven are guild contests: 18:30 and 21:30 Pacific.
+        Assert.Equal(2, day.Count(s => s.HasGuildContest));
+        Assert.Equal([new TimeSpan(1, 30, 0), new TimeSpan(4, 30, 0)],
+            day.Where(s => s.HasGuildContest).Select(s => s.SpawnsAt.TimeOfDay));
+    }
+
+    /// <summary>
+    /// Sunday 18:00 Pacific is BOTH the weekly siege and an hourly field-boss slot, so one instant
+    /// carries two events. Collapsing them by time would hide a real spawn behind another.
+    /// </summary>
+    [Fact]
+    public void SiegeAndAnHourlySlotShareOneInstantWithoutCollapsing()
+    {
+        var schedule = BossSchedule.LoadBundled();
+        var pacific = TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles");
+
+        // Monday 01:00 UTC is Sunday 18:00 Pacific.
+        var both = schedule.NextSpawns(Utc(2026, 8, 10), "Americas", pacific, count: 2);
+
+        Assert.Equal(2, both.Count);
+        Assert.All(both, s => Assert.Equal(Utc(2026, 8, 10, 1, 0), s.SpawnsAt));
+
+        Assert.Contains(both, s => s.IsSiege);
+        Assert.Contains(both, s => s.IsFieldBoss);
+
+        // And it really is Sunday evening for the player.
+        var local = TimeZoneInfo.ConvertTime(both[0].SpawnsAt, pacific);
+        Assert.Equal(DayOfWeek.Sunday, local.DayOfWeek);
+        Assert.Equal(18, local.Hour);
+    }
+
+    /// <summary>
+    /// The Daily tab carries only siege and archbosses, so its slots are typed ArchBosses. They were
+    /// FieldBosses until the merge, which was wrong on its own terms and — once both streams showed at
+    /// once — left two identical-looking rows with no way to tell which was worth organising for.
+    /// </summary>
+    [Fact]
+    public void BundledDailyTabSlotsAreTypedAsArchbosses()
+    {
+        var schedule = BossSchedule.LoadBundled();
+        var pacific = TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles");
+
+        var archbosses = schedule
+            .NextSpawns(Utc(2026, 8, 11), "Americas", pacific, count: 40)
+            .Where(s => s.IsArchBoss)
+            .ToList();
+
+        Assert.NotEmpty(archbosses);
+        Assert.All(archbosses, s => Assert.Equal("Arch Bosses", s.DisplayName));
+
+        // 17:00 and 20:00 Pacific, which is what the client shows.
+        Assert.All(archbosses, s =>
+            Assert.Contains(TimeZoneInfo.ConvertTime(s.SpawnsAt, pacific).Hour, new[] { 17, 20 }));
+    }
+
+    /// <summary>
+    /// A merged day's slots must come out in time order. NextSpawns stops walking as soon as it has
+    /// enough, so concatenating two sorted lists without re-sorting returns the wrong three.
+    /// </summary>
+    [Fact]
+    public void MergedDayIsReSortedNotAppended()
+    {
+        const string json = """
+            {
+              "timeBasis": "utc",
+              "regions": {
+                "Americas": {
+                  "hourlySlots": [ { "time": "01:00", "type": "FieldBosses" } ],
+                  "weeklySlots": {
+                    "Wednesday": [ { "time": "23:00", "type": "ArchBosses" } ]
+                  }
+                }
+              }
+            }
+            """;
+
+        // The weekday slot is LATE in the day and the hourly one is early, so appending would put
+        // 23:00 before 01:00 and the first spawn returned would be the wrong one.
+        var spawns = BossSchedule.Parse(json).NextSpawns(Utc(2026, 8, 12), "Americas", TimeZoneInfo.Utc, count: 1);
+
+        var spawn = Assert.Single(spawns);
+        Assert.Equal(Utc(2026, 8, 12, 1, 0), spawn.SpawnsAt);
+        Assert.True(spawn.IsFieldBoss);
     }
 }

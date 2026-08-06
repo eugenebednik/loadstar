@@ -196,11 +196,16 @@ internal sealed class BossOverlay : Form
         {
             var remaining = spawn.SpawnsAt - now;
 
-            // Imminent goes red regardless of type; otherwise field bosses take the accent and
-            // dynamic events stay muted, so the thing worth travelling for is the thing that stands out.
+            // Imminent goes red regardless of type; otherwise everything worth travelling for takes
+            // the accent and only dynamic events stay muted.
+            //
+            // Stated as "not a dynamic event" rather than as a list of the types that qualify. The
+            // list version had to be extended every time the schedule gained a type, and forgetting
+            // to meant a real spawn quietly rendering as muted filler — which is what happened to
+            // archbosses when the two streams were merged.
             var colour = remaining <= TimeSpan.FromMinutes(5)
                 ? Color.FromArgb(255, 120, 110)
-                : spawn.IsFieldBoss || spawn.IsSiege ? Theme.Accent : Color.Gainsboro;
+                : spawn.IsDynamicEvent ? Color.Gainsboro : Theme.Accent;
 
             DrawLine(g, spawn.DisplayName, y, colour);
             DrawLine(g, spawn.Countdown(remaining), y, colour, rightAlign: true);
