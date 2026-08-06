@@ -96,6 +96,54 @@ Each slot takes an optional `bosses` array. A slot holds several bosses at one t
 
 That renders as `20:00 - Ahzreil, Talus, Grand Aelon`. Absent or empty renders `Field Bosses`.
 
+### The hover tooltip is CONFIRMED, and it gives more than the name
+
+Verified on a live client 2026-08-05. Hovering a schedule icon produces, for example:
+
+```
+[Peace] Ramux
+Stillreach | Monsters Lv. 60
+```
+
+So a direct text read is available and icon matching is unnecessary. Three fields come free, and
+**all three matter**:
+
+- **The name.**
+- **The zone** (`Stillreach`). "Ramux — Stillreach" is a materially better countdown than "Ramux",
+  because the player has to travel there.
+- **The bracketed CONTEST MODE, which is not decoration.** `[Peace]` is open to anyone. `[Guild]` is
+  a guild-only PvP contest — guilds competing against each other for the kill.
+
+`[Guild]` changes the advice, not just the label:
+
+1. **A solo or guildless player cannot participate at all.** Counting one down for them, or
+   recommending they travel, wastes their evening. This is the single most useful thing the mode tag
+   buys.
+2. **It flips the gear axis.** PvP and PvE are separate stat investments in this game — accuracy
+   versus crit, endurance versus evasion. Preparation advice for a `[Guild]` boss is PvP advice.
+
+A slot can hold several bosses, so **mode is per boss, not per slot** — do not hoist it to the slot.
+
+**Archbosses appear inside field-boss slots.** Ramux is an archboss and was found among the icons of a
+`FieldBosses` 20:00 slot, so the slot `type` alone does not describe what is spawning.
+
+### The current shape cannot hold this
+
+`bosses` is a flat array of strings, which loses the mode, the zone and the archboss distinction —
+exactly the three things worth having. **Widen the model BEFORE capturing**, or the capture has to be
+redone:
+
+```jsonc
+"bosses": [
+  { "name": "Ramux", "mode": "guild", "zone": "Stillreach", "kind": "archboss" },
+  { "name": "Talus", "mode": "peace", "zone": "Urstella Fields" }
+]
+```
+
+Keep the plain-string form parsing as a name-only entry, so the existing data and tests stay valid.
+`BossSpawn.DisplayName` joins the names; the overlay should mark `guild` entries visibly, since that
+is the one a player must not travel to uninvited.
+
 **Leave it empty unless you actually read the name.** A plausible wrong boss is indistinguishable
 from a right one until the player arrives somewhere empty, and it is worse than no name at all.
 Schedule icons are unlabelled, so getting names means one of these, in order of reliability:
