@@ -122,7 +122,30 @@ So a direct text read is available and icon matching is unnecessary. Three field
 2. **It flips the gear axis.** PvP and PvE are separate stat investments in this game — accuracy
    versus crit, endurance versus evasion. Preparation advice for a `[Guild]` boss is PvP advice.
 
-A slot can hold several bosses, so **mode is per boss, not per slot** — do not hoist it to the slot.
+- **A despawn window**, on some entries: `Despawns after 50min.` That is how long the player has to
+  actually get there, which is worth more than the spawn instant alone.
+
+#### Mode belongs to the OCCURRENCE, not the boss — corrected 2026-08-05
+
+Two tooltips, same boss, same weekday, same time, different weeks:
+
+| Date | Tooltip |
+| --- | --- |
+| 05/08 Wed 20:00 | `[Guild] Ramux` — Stillreach, Lv. 60, *Despawns after 50min* |
+| 12/08 Wed 20:00 | `[Peace] Ramux` — Stillreach, Lv. 60 |
+
+So Ramux is guild-contested one Wednesday and open the next. **Do not treat mode as an attribute of
+the boss, and do not copy the mode you observed today onto every future occurrence of that weekday** —
+that is exactly the mistake the weekly model invites, and it would tell a guildless player to skip a
+boss that is open to them.
+
+It also means mode may run on a cycle of its own, the same shape as the biweekly siege. Capture enough
+weeks to see whether it alternates before encoding it. If it does, the mode needs the same
+`everyDays`/`since` treatment the slots have, or it needs to live on dated entries rather than weekday
+ones.
+
+Until that is established, **omitting mode is correct**. A name with no mode is incomplete; a name with
+the wrong mode is misleading.
 
 **Archbosses appear inside field-boss slots.** Ramux is an archboss and was found among the icons of a
 `FieldBosses` 20:00 slot, so the slot `type` alone does not describe what is spawning.
@@ -135,8 +158,9 @@ redone:
 
 ```jsonc
 "bosses": [
-  { "name": "Ramux", "mode": "guild", "zone": "Stillreach", "kind": "archboss" },
-  { "name": "Talus", "mode": "peace", "zone": "Urstella Fields" }
+  // mode omitted deliberately unless its cycle is known — see above
+  { "name": "Ramux", "zone": "Stillreach", "kind": "archboss", "despawnMinutes": 50 },
+  { "name": "Talus", "zone": "Urstella Fields" }
 ]
 ```
 
