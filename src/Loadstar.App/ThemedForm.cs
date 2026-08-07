@@ -16,6 +16,10 @@ internal class ThemedForm : Form
         Font = Theme.UiFont;
         AutoScaleMode = AutoScaleMode.Dpi;
 
+        // Composites the form off-screen and blits it once, instead of letting each child paint into a
+        // visible window. Without it the theme pass is watchable: controls change colour one at a time.
+        DoubleBuffered = true;
+
         // Without this every window — and so the taskbar button — shows the stock WinForms icon,
         // which reads as an unfinished application regardless of how the rest of it looks.
         Icon = AppIcon.Shared;
@@ -27,12 +31,35 @@ internal class ThemedForm : Form
         ApplyTitleBarTheme();
     }
 
-    protected override void OnShown(EventArgs e)
+    /// <summary>
+    /// Themes the tree BEFORE the window is painted.
+    ///
+    /// <para><b>This used to be <c>OnShown</c>, and that was the white flash.</b> <c>OnShown</c> fires
+    /// after the form is displayed, so the window appeared in the system's own colours — a white client
+    /// area with white text boxes — and then recoloured itself control by control while the user watched.
+    /// On the settings window, which has the most controls, it read as the dialog loading slowly.</para>
+    ///
+    /// <para><c>OnLoad</c> satisfies the original reason for <c>OnShown</c> unchanged: it still runs after
+    /// the derived constructor has finished building the tree, so controls added there are still covered.
+    /// It simply runs before the first paint instead of after it.</para>
+    ///
+    /// <para>Layout is suspended across the walk because recolouring a control invalidates it, and doing
+    /// that to fifty controls one at a time is fifty layout passes for one visible result.</para>
+    /// </summary>
+    protected override void OnLoad(EventArgs e)
     {
-        base.OnShown(e);
+        base.OnLoad(e);
 
-        // Applied after the tree is built so controls added in a derived constructor are covered.
-        Theme.Apply(this);
+        SuspendLayout();
+
+        try
+        {
+            Theme.Apply(this);
+        }
+        finally
+        {
+            ResumeLayout(performLayout: true);
+        }
     }
 
     private void ApplyTitleBarTheme()
@@ -58,7 +85,10 @@ internal class ThemedForm : Form
         ForeColor = Theme.Text,
         AutoSize = false,
         Dock = DockStyle.Top,
-        Height = 42,
+        // MEASURED against the HEADING font, which is the largest in the app and so the first to
+        // overflow a literal. Every window in the app uses this, which is why one wrong number here
+        // reads as "text is clipped all over the place".
+        Height = Theme.RowHeight(lines: 1, extra: 14, font: Theme.HeadingFont),
         Padding = new Padding(16, 10, 16, 0),
         BackColor = Color.Transparent,
     };
@@ -70,7 +100,10 @@ internal class ThemedForm : Form
         {
             Dock = DockStyle.Bottom,
             FlowDirection = FlowDirection.RightToLeft,
-            Height = 56,
+            // The buttons below set MinimumSize 32 and Padding 10 top and bottom, so 52 is the floor and
+            // 56 left four pixels of slack. Measured instead, because at 150% scaling the font grows and
+            // the literal does not — the row then clips the buttons it exists to hold.
+            Height = Theme.RowHeight(lines: 1, extra: 26),
             Padding = new Padding(12, 10, 12, 10),
             BackColor = Theme.Background,
         };

@@ -19,6 +19,24 @@ public sealed record Advice
     /// </summary>
     public ScreenKind RecognizedScreen { get; init; } = ScreenKind.Unknown;
 
+    /// <summary>
+    /// One entry per screenshot sent, in the order they were sent.
+    ///
+    /// <para><b>Why a list and not just <see cref="RecognizedScreen"/>.</b> Up to four screens travel with
+    /// a question, and a single field forced the model to pick one — so an answer that had genuinely read
+    /// the character sheet AND the artifact page still reported "Screen recognised as: Character", and
+    /// looked to the player like three of their four screenshots had been thrown away.</para>
+    ///
+    /// <para><b>And why <see cref="ScreenReading.Used"/> exists.</b> Making the model write a line per
+    /// screen turns ignoring one into something it has to state rather than something that happens
+    /// silently. A rune screen was supplied and produced no rune advice, and nothing in the answer
+    /// admitted it — which is the failure this field is here to make impossible to hide.</para>
+    ///
+    /// <para>Empty when the model did not report it, in which case <see cref="RecognizedScreen"/> is all
+    /// there is. Nothing depends on this being populated.</para>
+    /// </summary>
+    public IReadOnlyList<ScreenReading> Screens { get; init; } = [];
+
     /// <summary>The model's own reading of whether the screen could answer the question asked.</summary>
     public bool AnsweredFromScreen { get; init; } = true;
 
@@ -29,6 +47,28 @@ public sealed record Advice
     public IReadOnlyList<string> MissingInformation { get; init; } = [];
 
     public TokenUsage? Usage { get; init; }
+}
+
+/// <summary>
+/// What the model made of one of the screenshots it was sent.
+/// </summary>
+public sealed record ScreenReading
+{
+    public required ScreenKind Screen { get; init; }
+
+    /// <summary>
+    /// Whether this screen actually informed the advice.
+    ///
+    /// <para>False is a legitimate and useful answer — a capture of the open world among four genuinely
+    /// contributes nothing. What is not acceptable is silence, which is what the single-screen field
+    /// allowed.</para>
+    /// </summary>
+    public bool Used { get; init; }
+
+    /// <summary>
+    /// What it contributed, or why it did not. In the player's language, so it can be shown as-is.
+    /// </summary>
+    public string? Note { get; init; }
 }
 
 public sealed record AdviceStep

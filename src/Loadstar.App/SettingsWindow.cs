@@ -94,7 +94,16 @@ internal sealed class SettingsWindow : ThemedForm
 
     // Fixed height rather than AutoSize: this text changes at runtime (server counts, targeting
     // messages), and a growing label reflowed every row beneath it.
-    private readonly Label _status = new() { AutoSize = false, Width = FieldWidth, Height = 34 };
+    /// <summary>
+    /// Shows whatever the last action had to say — a saved confirmation, a model-list failure, a rejected
+    /// hotkey. Arbitrary translated prose, so its height is measured for two lines rather than guessed.
+    /// </summary>
+    private readonly Label _status = new()
+    {
+        AutoSize = false,
+        Width = FieldWidth,
+        Height = Theme.RowHeight(lines: 2, extra: 6),
+    };
 
     public SettingsWindow(SettingsStore store, SecretStore secrets)
     {
@@ -171,12 +180,16 @@ internal sealed class SettingsWindow : ThemedForm
     /// <summary>
     /// Re-applies the values that theming can disturb.
     ///
-    /// <para><see cref="ThemedForm.OnShown"/> runs <see cref="Theme.Apply"/>, which touches
+    /// <para><see cref="ThemedForm.OnLoad"/> runs <see cref="Theme.Apply"/>, which touches
     /// <c>FlatStyle</c> on combo boxes — and that recreates the native handle, dropping whatever
     /// text was in an editable one. The stored process name kept coming up blank because of it, and
     /// a blank field then overwrote a good setting on Save. Restoring here, after the theme has
     /// settled, is the reliable order rather than trying to guess which property assignment is
     /// destructive.</para>
+    ///
+    /// <para>The theme pass used to run from <c>OnShown</c> too, so this was racing it within one event.
+    /// Now that it runs at <c>OnLoad</c> the ordering is guaranteed: the handles have already been
+    /// recreated by the time this fires.</para>
     /// </summary>
     protected override void OnShown(EventArgs e)
     {
@@ -254,6 +267,20 @@ internal sealed class SettingsWindow : ThemedForm
     /// <summary>Uniform width for every input, so the right-hand edge is not ragged.</summary>
     private const int FieldWidth = 420;
 
+    /// <summary>
+    /// A two-column form grid.
+    ///
+    /// <para><b>This is where the settings dialog spends its time, and SuspendLayout does not fix it.</b>
+    /// Every add to a TableLayoutPanel with <see cref="SizeType.AutoSize"/> rows re-measures the whole
+    /// table, and the General tab costs ~1.9s to build for that reason. The obvious fix was tried and
+    /// MEASURED: batching the adds behind SuspendLayout/ResumeLayout made it 4.9s to open instead of 4.3s,
+    /// and suspending at the form level as well made it 11.5s. Deferring the measurement does not avoid it,
+    /// it just makes one resume pay for every nested AutoSize control at once.</para>
+    ///
+    /// <para>So the cost is inherent to nesting AutoSize TableLayoutPanel rows inside AutoSize content, and
+    /// removing it means not using TableLayoutPanel here — a real change, not a flag. Left as it is rather
+    /// than shipping a measured regression.</para>
+    /// </summary>
     private static TableLayoutPanel NewGrid()
     {
         var layout = new TableLayoutPanel
@@ -361,6 +388,7 @@ internal sealed class SettingsWindow : ThemedForm
         Row(grid, string.Empty, _status);
 
         page.Controls.Add(grid);
+
         return page;
     }
 
@@ -546,6 +574,7 @@ internal sealed class SettingsWindow : ThemedForm
         Row(grid, string.Empty, overlayHint);
 
         page.Controls.Add(grid);
+
         return page;
     }
 

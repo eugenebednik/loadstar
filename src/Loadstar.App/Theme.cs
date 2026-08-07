@@ -55,6 +55,14 @@ internal static class Theme
     /// <summary>Backdrop behind the screenshot preview — always dark so the image reads well.</summary>
     public static Color PreviewBackdrop => Color.FromArgb(24, 24, 28);
 
+    /// <summary>
+    /// For text about something being unavailable or wrong.
+    ///
+    /// <para>Distinct from <see cref="Accent"/>, which is the gold used for hints and primary actions —
+    /// "here is something useful" and "this is not working" should not be the same colour.</para>
+    /// </summary>
+    public static Color Warning => IsDark ? Color.FromArgb(242, 139, 130) : Color.FromArgb(179, 38, 30);
+
     public static Font UiFont { get; } = CreateFont("Segoe UI Variable Text", "Segoe UI", 9.75f);
 
     public static Font HeadingFont { get; } = CreateFont("Segoe UI Variable Display", "Segoe UI", 13f, FontStyle.Regular);
@@ -89,6 +97,43 @@ internal static class Theme
         button.FlatAppearance.BorderSize = 0;
         button.Font = new Font(UiFont, FontStyle.Bold);
         button.Cursor = Cursors.Hand;
+    }
+
+    /// <summary>
+    /// The height a docked row needs for <paramref name="lines"/> lines of text, measured.
+    ///
+    /// <para><b>Use this instead of a pixel literal.</b> Literal heights have clipped text in this app
+    /// repeatedly and always in the same way: a number chosen against English at 100% scaling, then a
+    /// longer translation or a larger DPI arrives and the last line loses its descenders. "Drag to move"
+    /// was cut, four settings hints were cut, a boss-timer hint showed half a sentence, and a delete icon
+    /// looked like the image below it was overlapping it.</para>
+    ///
+    /// <para><see cref="Font.Height"/> IS the line spacing in pixels for that font at the current DPI,
+    /// which is exactly the quantity these literals were guessing at.</para>
+    /// </summary>
+    /// <param name="lines">How many lines of text the row holds. Count wrapped lines, not sentences.</param>
+    /// <param name="extra">Padding and breathing room, added after the measurement.</param>
+    /// <param name="font">Defaults to <see cref="UiFont"/>; pass an icon font when sizing around a glyph.</param>
+    public static int RowHeight(int lines = 1, int extra = 0, Font? font = null) =>
+        ((font ?? UiFont).Height * Math.Max(1, lines)) + Math.Max(0, extra);
+
+    /// <summary>
+    /// Enables or disables a PRIMARY button so that it looks it.
+    ///
+    /// <para>Setting <see cref="Control.Enabled"/> alone is not enough. WinForms greys a button by letting
+    /// the system renderer draw it, and <see cref="MakePrimary"/> makes it <see cref="FlatStyle.Flat"/> with
+    /// an explicit <see cref="Control.BackColor"/> — which keeps being painted regardless of Enabled. A
+    /// disabled Ask button was pixel-identical to an enabled one, and the only symptom was that clicking it
+    /// did nothing, which is the worst possible way to communicate "you are offline".</para>
+    /// </summary>
+    public static void SetPrimaryEnabled(Button button, bool enabled)
+    {
+        ArgumentNullException.ThrowIfNull(button);
+
+        button.Enabled = enabled;
+        button.BackColor = enabled ? Accent : Border;
+        button.ForeColor = enabled ? AccentText : SubtleText;
+        button.Cursor = enabled ? Cursors.Hand : Cursors.Default;
     }
 
     /// <summary>Styles a button as a secondary action.</summary>

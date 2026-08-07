@@ -47,6 +47,32 @@ public enum ScreenKind
     Currency,
     Merchant,
     World,
+
+    /// <summary>
+    /// The tabbed expanded panel, which is a DIFFERENT screen from <see cref="Character"/> and the only
+    /// place Evasion, Endurance, Hit, Critical, Heavy Attack and Damage Reduction appear at all.
+    /// </summary>
+    CharacterExpanded,
+
+    /// <summary>
+    /// The Rune Book.
+    ///
+    /// <para><b>This value's absence was a real bug.</b> The prompt tells the model to ask for the Rune
+    /// Book proactively — runes were the single largest Combat Power gap on the reference character — and
+    /// then handed it an enum with no way to name the screen when the player supplied it. A rune screen
+    /// arrived among four and produced no rune advice at all.</para>
+    /// </summary>
+    Runes,
+
+    /// <summary>The Artifact page. Absent for the same reason as <see cref="Runes"/>, and paired with it
+    /// in the prompt as the other system most often left empty.</summary>
+    Artifacts,
+
+    /// <summary>The Weapon Mastery screen, which names the character's weapons in text.</summary>
+    Mastery,
+
+    /// <summary>Exploration or Adventure Codex — a materials source, so worth telling apart.</summary>
+    Codex,
 }
 
 /// <summary>An item as the model read it from the screen, not as the game defines it.</summary>

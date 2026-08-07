@@ -1,4 +1,5 @@
 using Loadstar.Core.Capture;
+using Loadstar.Core.Net;
 
 namespace Loadstar.App;
 
@@ -60,6 +61,24 @@ internal sealed class AskWindow : ThemedForm
     /// </summary>
     private readonly ToolTip _tips = new();
 
+    /// <summary>
+    /// Whether a request could reach the internet, checked while this dialog is open.
+    ///
+    /// <para>Gating Ask here rather than letting the request fail saves the player the wait: the capture is
+    /// already taken and the question already typed, and a timeout several seconds later teaches nothing
+    /// the app could not have said up front.</para>
+    ///
+    /// <para><b>Polled only while this window is up.</b> The tray sits open for hours and the OS
+    /// network-change events cover the whole session for free; a request every few seconds forever would be
+    /// thousands a day to answer a question nobody is asking.</para>
+    /// </summary>
+    private readonly ConnectivityMonitor _connectivity;
+
+    private readonly System.Windows.Forms.Timer _connectivityPoll = new() { Interval = 8000 };
+
+    private readonly Button _ask;
+    private readonly Label _offline;
+
     /// <summary>The working set. Deletions happen here, and <see cref="Kept"/> is what survived.</summary>
     private readonly List<CapturedFrame> _frames;
 
@@ -85,14 +104,23 @@ internal sealed class AskWindow : ThemedForm
     /// Text to start with, used to carry a typed question across a RETAKE or an added screen. Losing what
     /// someone wrote because they fixed the screenshot would make those buttons feel like a punishment.
     /// </param>
+    /// <param name="probe">
+    /// Overrides the reachability check. Exists so the offline state can actually be LOOKED AT — see
+    /// <c>--ask --offline</c> in Program. Gating a button on a condition that only occurs when the wifi
+    /// really drops is a condition nobody ever verifies, and an unverified disabled button is how an app
+    /// ships that cannot be used at all.
+    /// </param>
     public AskWindow(
         IReadOnlyList<CapturedFrame> frames,
         string windowTitle,
         string hotkeyDisplay,
         IReadOnlyList<string> recentQuestions,
-        string? initialQuestion = null)
+        string? initialQuestion = null,
+        Func<CancellationToken, Task<bool>>? probe = null)
     {
         ArgumentNullException.ThrowIfNull(frames);
+
+        _connectivity = new ConnectivityMonitor(probe ?? InternetProbe.IsReachableAsync);
 
         if (frames.Count == 0)
         {
@@ -116,7 +144,7 @@ internal sealed class AskWindow : ThemedForm
         {
             Text = string.Format(Strings.Get("ask.caption"), windowTitle),
             Dock = DockStyle.Top,
-            Height = 24,
+            Height = Theme.RowHeight(lines: 1, extra: 4),
             Padding = new Padding(16, 0, 16, 0),
             AutoEllipsis = true,
             ForeColor = Theme.SubtleText,
@@ -131,7 +159,7 @@ internal sealed class AskWindow : ThemedForm
         {
             Text = Strings.Get("ask.hint"),
             Dock = DockStyle.Top,
-            Height = 40,
+            Height = Theme.RowHeight(lines: 2, extra: 8),
             Padding = new Padding(16, 0, 16, 4),
             ForeColor = Theme.Accent,
             BackColor = Color.Transparent,
@@ -146,11 +174,12 @@ internal sealed class AskWindow : ThemedForm
         };
 
         // TWO LINES, not one. At one line the Russian string was clipped mid-sentence — it is a whole
-        // sentence in every language and several are longer than the English.
+        // sentence in every language and several are longer than the English. MEASURED rather than a
+        // literal, because that is what made it wrong in the first place.
         _queued = new Label
         {
             Dock = DockStyle.Bottom,
-            Height = 38,
+            Height = Theme.RowHeight(lines: 2, extra: 6),
             ForeColor = Theme.SubtleText,
             BackColor = Color.Transparent,
             Tag = hotkeyDisplay,
@@ -229,6 +258,21 @@ internal sealed class AskWindow : ThemedForm
         // never asked for them, so a player with Russian selected got an English dialog. Wiring them
         // up costs nothing and was the whole gap.
         var ask = new Button { Text = Strings.Get("ask.send"), DialogResult = DialogResult.OK };
+
+        _ask = ask;
+
+        // Above the action bar, so the explanation is next to the button it is about rather than buried in
+        // the body. Hidden while online — a permanent "you are connected" line is noise.
+        _offline = new Label
+        {
+            Text = Strings.Get("ask.offline"),
+            Dock = DockStyle.Bottom,
+            Height = Theme.RowHeight(lines: 2, extra: 6),
+            Padding = new Padding(16, 0, 16, 0),
+            ForeColor = Theme.Warning,
+            BackColor = Color.Transparent,
+            Visible = false,
+        };
         var cancel = new Button { Text = Strings.Get("common.cancel"), DialogResult = DialogResult.Cancel };
 
         // RETAKE, as DialogResult.Retry. The caller loops on it rather than the dialog re-capturing
@@ -249,10 +293,14 @@ internal sealed class AskWindow : ThemedForm
         // Taller than before, because the stacked suggestions occupy three lines where the old chip row
         // occupied one. Sized so the text box keeps roughly the height it had rather than being
         // squeezed — the last thing this dialog needs is a cramped box the user is meant to type into.
+        //
+        // MEASURED: three suggestion links, each of which can wrap to two lines in a language with longer
+        // words, plus four lines of room to type. A literal here squeezed the box that the whole dialog
+        // exists to let someone type into.
         var lower = new Panel
         {
             Dock = DockStyle.Bottom,
-            Height = 190,
+            Height = Theme.RowHeight(lines: 9, extra: 24),
             Padding = new Padding(16, 4, 16, 4),
             BackColor = Theme.Background,
         };
@@ -264,6 +312,10 @@ internal sealed class AskWindow : ThemedForm
         Controls.Add(lower);
         // RightToLeft flow: first argument lands rightmost. Ask keeps the corner, and the two capture
         // actions sit next to Cancel so a stray click near the primary action cannot fire one.
+        // BEFORE the action bar, so it sits above it. Docked controls added later end up closer to the
+        // edge, so adding this afterwards put it below the buttons and half of it off the bottom of the
+        // window — the notice explaining why Ask was greyed out was itself clipped.
+        Controls.Add(_offline);
         Controls.Add(CreateActionBar(ask, add, retake, cancel));
         Controls.Add(hint);
         Controls.Add(caption);
@@ -277,21 +329,82 @@ internal sealed class AskWindow : ThemedForm
         {
             if (e.Control && e.KeyCode == Keys.Enter)
             {
-                DialogResult = DialogResult.OK;
+                // Gated like the button. A shortcut that sends while the button that does the same thing
+                // is greyed out is the kind of inconsistency that gets reported as "it sometimes works".
+                if (_ask.Enabled)
+                {
+                    DialogResult = DialogResult.OK;
+                }
+
                 e.SuppressKeyPress = true;
             }
         };
 
         Rebuild();
 
+        // Marshalled: the monitor raises this from whatever thread the probe completed on, and touching a
+        // control from a background thread is an InvalidOperationException at best.
+        _connectivity.Changed += (_, online) =>
+        {
+            if (!IsDisposed && IsHandleCreated)
+            {
+                BeginInvoke(() => ApplyConnectivity(online));
+            }
+        };
+
+        _connectivityPoll.Tick += (_, _) => _ = _connectivity.RefreshAsync();
+
         Shown += (_, _) =>
         {
+            _connectivity.Start();
+            _connectivityPoll.Start();
+
+            // One check now, so a dialog opened on a dead connection says so immediately instead of after
+            // the first poll interval.
+            _ = _connectivity.RefreshAsync();
+
             Activate();
             _question.Focus();
             // Caret after any restored text, so a carried-over question can be edited rather than
             // replaced by the first keystroke.
             _question.SelectionStart = _question.TextLength;
         };
+    }
+
+    /// <summary>
+    /// Enables or disables Ask, and says why.
+    ///
+    /// <para>Only Ask. Retake and Add work perfectly well offline — the capture is local — and disabling
+    /// them would strand someone mid-flow with no way to finish assembling their screens while the wifi
+    /// comes back.</para>
+    /// </summary>
+    private void ApplyConnectivity(bool online)
+    {
+        // Not just Enabled: a flat button with an explicit BackColor keeps painting it when disabled, so
+        // this is what actually greys it out. See Theme.SetPrimaryEnabled.
+        Theme.SetPrimaryEnabled(_ask, online);
+
+        _offline.Visible = !online;
+
+        // Set HERE and not only in the constructor. Theme.Apply's Label case forces every small label to
+        // SubtleText at OnShown, so a warning colour assigned during construction is gone by the time
+        // anyone sees it — the same overwrite that made the delete button an empty rectangle. This runs
+        // after the theme walk and on every transition, so it is the assignment that survives.
+        _offline.ForeColor = Theme.Warning;
+
+        _tips.SetToolTip(_ask, online ? string.Empty : Strings.Get("ask.offline"));
+
+        // Ctrl+Enter bypasses the button entirely, so the form-level accept has to go too.
+        AcceptButton = online ? _ask : null;
+    }
+
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        // Before the dialog result is consumed, so no probe is in flight while the caller is already
+        // capturing again.
+        _connectivityPoll.Stop();
+
+        base.OnFormClosing(e);
     }
 
     /// <summary>
@@ -400,10 +513,14 @@ internal sealed class AskWindow : ThemedForm
             BackColor = Theme.PreviewBackdrop,
         };
 
+        // MEASURED, and around the icon font rather than the UI font — the trash glyph is the tallest
+        // thing in this row. At a literal 22px the button was taller than the band that held it, so the
+        // image directly below appeared to slice the icon in half. The extra is a deliberate gap so the
+        // glyph does not sit flush against the preview.
         var header = new Panel
         {
             Dock = DockStyle.Top,
-            Height = 22,
+            Height = Theme.RowHeight(lines: 1, extra: 10, font: TrashFont),
             BackColor = Theme.Background,
         };
 
@@ -490,6 +607,11 @@ internal sealed class AskWindow : ThemedForm
             // image at paint time.
             _grid.Controls.Clear();
             _tips.Dispose();
+            _connectivityPoll.Dispose();
+
+            // Unsubscribes from the STATIC NetworkChange events. Without this the monitor, and this whole
+            // window through its Changed handler, stay alive for the life of the process.
+            _connectivity.Dispose();
 
             foreach (var image in _images)
             {

@@ -37,7 +37,8 @@ internal sealed class HotkeyRecorderDialog : ThemedForm
         {
             Text = current ?? "Press a combination",
             Dock = DockStyle.Top,
-            Height = 64,
+            // Sized against its OWN 20pt font, not the UI font — this is the largest text in the app.
+            Height = Theme.RowHeight(lines: 1, extra: 20, font: new Font(Theme.HeadingFont.FontFamily, 20f, FontStyle.Bold)),
             TextAlign = ContentAlignment.MiddleCenter,
             Font = new Font(Theme.HeadingFont.FontFamily, 20f, FontStyle.Bold),
             ForeColor = Theme.Accent,
@@ -48,7 +49,7 @@ internal sealed class HotkeyRecorderDialog : ThemedForm
         {
             Text = "Hold Ctrl, Alt or Shift and press a key.",
             Dock = DockStyle.Top,
-            Height = 48,
+            Height = Theme.RowHeight(lines: 2, extra: 12),
             TextAlign = ContentAlignment.MiddleCenter,
             ForeColor = Theme.SubtleText,
             BackColor = Color.Transparent,

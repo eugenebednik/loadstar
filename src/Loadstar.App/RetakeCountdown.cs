@@ -54,7 +54,10 @@ internal sealed class RetakeCountdown : Form
                 ? Strings.Get("retake.generic")
                 : string.Format(Strings.Get("retake.open"), whatToOpen),
             Dock = DockStyle.Top,
-            Height = 44,
+            // Two lines and measured: this is a whole sentence, it is BOLD so its line height exceeds the
+            // UI font's, and it names a screen whose name varies in length. The German and Russian
+            // versions both wrap.
+            Height = Theme.RowHeight(lines: 2, extra: 14),
             Padding = new Padding(16, 12, 16, 0),
             ForeColor = Theme.Text,
             Font = new Font(Theme.UiFont, FontStyle.Bold),

@@ -92,7 +92,8 @@ internal sealed class ResultWindow : ThemedForm
             {
                 Text = Strings.Get("result.wrongScreen"),
                 Dock = DockStyle.Top,
-                Height = 38,
+                // Bold, so taller than the UI font, and a full sentence in nine languages.
+                Height = Theme.RowHeight(lines: 2, extra: 10),
                 Padding = new Padding(16, 8, 16, 0),
                 ForeColor = Theme.Accent,
                 Font = new Font(Theme.UiFont, FontStyle.Bold),
@@ -122,9 +123,38 @@ internal sealed class ResultWindow : ThemedForm
             text.AppendLine(string.Format(Strings.Get("result.youAsked"), question)).AppendLine();
         }
 
-        // The screen NAME is an English enum value the model reports and code parses; the label around
-        // it is ours to translate.
-        text.AppendLine(string.Format(Strings.Get("result.screen"), advice.RecognizedScreen));
+        // EVERY screen, not just one. A single line saying "Screen recognised as: Character" after four
+        // screenshots were sent reads as though the other three were discarded — which is exactly how it
+        // was reported, and exactly what it looked like.
+        //
+        // The screen NAMES are English enum values the model reports and code parses; the labels around
+        // them are ours to translate.
+        if (advice.Screens.Count > 1)
+        {
+            text.AppendLine(Strings.Get("result.screens"));
+
+            for (var i = 0; i < advice.Screens.Count; i++)
+            {
+                var reading = advice.Screens[i];
+
+                text.Append("  ")
+                    .Append(i + 1)
+                    .Append(". ")
+                    .Append(reading.Screen)
+                    .Append(reading.Used ? " — " : Strings.Get("result.screens.unused"));
+
+                if (!string.IsNullOrWhiteSpace(reading.Note))
+                {
+                    text.Append(reading.Note);
+                }
+
+                text.AppendLine();
+            }
+        }
+        else
+        {
+            text.AppendLine(string.Format(Strings.Get("result.screen"), advice.RecognizedScreen));
+        }
 
         if (!advice.AnsweredFromScreen)
         {

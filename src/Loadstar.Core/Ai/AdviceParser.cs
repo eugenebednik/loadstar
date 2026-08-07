@@ -55,6 +55,7 @@ public static class AdviceParser
                 GeneratedAt = generatedAt,
                 Headline = ReadString(root, "headline") ?? "(no headline)",
                 RecognizedScreen = ReadScreen(root),
+            Screens = ReadScreens(root),
                 AnsweredFromScreen = !root.TryGetProperty("answeredFromScreen", out var answered)
                     || answered.ValueKind != JsonValueKind.False,
                 Steps = ReadSteps(root),
@@ -139,9 +140,55 @@ public static class AdviceParser
     {
         var name = ReadString(root, "screen");
 
-        return name is not null && Enum.TryParse<ScreenKind>(name, ignoreCase: true, out var screen)
-            ? screen
-            : ScreenKind.Unknown;
+        if (name is not null && Enum.TryParse<ScreenKind>(name, ignoreCase: true, out var screen))
+        {
+            return screen;
+        }
+
+        // Falls back to the first entry of the per-screen list, so a model that filled in `screens` and
+        // omitted the singular field still gets its reading reported rather than "Unknown".
+        return ReadScreens(root).FirstOrDefault()?.Screen ?? ScreenKind.Unknown;
+    }
+
+    /// <summary>
+    /// Reads the per-screenshot readings, one per image sent.
+    ///
+    /// <para>Optional throughout. A model that reports only the old single <c>screen</c> field yields an
+    /// empty list, which the UI treats as "nothing extra to say" rather than as an error — this arrived
+    /// after the single field and must not break a reply that predates it.</para>
+    /// </summary>
+    private static IReadOnlyList<ScreenReading> ReadScreens(JsonElement root)
+    {
+        if (!root.TryGetProperty("screens", out var array) || array.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var readings = new List<ScreenReading>();
+
+        foreach (var entry in array.EnumerateArray())
+        {
+            if (entry.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var name = ReadString(entry, "screen");
+
+            readings.Add(new ScreenReading
+            {
+                Screen = name is not null && Enum.TryParse<ScreenKind>(name, ignoreCase: true, out var kind)
+                    ? kind
+                    : ScreenKind.Unknown,
+                // Defaults to true when absent: a screen the model bothered to list and describe was
+                // almost certainly read, and defaulting to false would accuse it of ignoring something.
+                Used = !entry.TryGetProperty("used", out var used)
+                    || used.ValueKind != JsonValueKind.False,
+                Note = ReadString(entry, "note"),
+            });
+        }
+
+        return readings;
     }
 
     private static IReadOnlyList<AdviceStep> ReadSteps(JsonElement root)

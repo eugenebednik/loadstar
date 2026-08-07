@@ -53,11 +53,19 @@ internal static class Program
                 ? Math.Clamp(n, 1, Core.Capture.PendingCaptures.Maximum)
                 : Core.Capture.PendingCaptures.Maximum;
 
+            // --offline forces the probe to fail, so the greyed-out Ask button can be seen without
+            // unplugging anything.
+            var offline = args.Contains("--offline", StringComparer.OrdinalIgnoreCase);
+
             using var ask = new AskWindow(
                 [.. Enumerable.Range(1, count).Select(SyntheticScreen)],
                 "THRONE AND LIBERTY (synthetic)",
                 "Ctrl+Alt+S",
-                ["how do I get stronger"]);
+                // No fake recents. Recent questions are the player's OWN typed words, so the real app is
+                // right to leave them untranslated — but seeding an English one here made the dev harness
+                // look like a localisation bug, and it was reported as one.
+                [],
+                probe: offline ? _ => Task.FromResult(false) : null);
 
             Application.Run(ask);
             return;

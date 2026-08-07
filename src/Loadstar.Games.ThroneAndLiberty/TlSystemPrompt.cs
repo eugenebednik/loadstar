@@ -358,14 +358,14 @@ public static class TlSystemPrompt
         | Gear Score, Equipment watermark, item level per slot | The character sheet |
         | Base stats, or which stats to allocate | The character sheet; for cost, hover the stat for its tooltip |
         | Where power is missing overall | Hover the Gear Score for the Combat Power tooltip |
-        | Evasion, Endurance, Hit, Critical, Heavy Attack, Damage Reduction | The EXPANDED character info — the base stats alone do not show these |
+        | Evasion, Endurance, Hit, Critical, Heavy Attack, Damage Reduction | The EXPANDED character info (report as `CharacterExpanded`) — the base stats alone do not show these |
         | Crowd-control chance or resistance | Expanded character info, crowd-control tab |
         | How the build performs against bosses, or in PvP | Expanded character info, Boss tab or PvP ("Face Off") tab |
         | Acquisition rates — Sollant, EXP, drops, tokens | Expanded character info, Miscellaneous tab |
         | Currency balances | The currency bar expanded, or the full currency window |
         | An item's traits, set progress or locked slots | Hover that item for its tooltip |
-        | Whether runes are slotted, and in what order | The Rune Book |
-        | Whether artifacts are equipped, and from which set | The Artifact page |
+        | Whether runes are slotted, and in what order | The Rune Book (report as `Runes`) |
+        | Whether artifacts are equipped, and from which set | The Artifact page (report as `Artifacts`) |
         | Inventory contents | The inventory panel |
 
         ## Ask for the numbers you need to do arithmetic
@@ -870,7 +870,12 @@ public static class TlSystemPrompt
 
         {
           "headline": "one line the overlay can show alone",
-          "screen": "Character|Inventory|Currency|Skills|Merchant|World|Unknown",
+          "screen": "the one screen the answer leans on most — same vocabulary as below",
+          "screens": [
+            { "screen": "Character|CharacterExpanded|Runes|Artifacts|Inventory|Currency|Skills|Mastery|Merchant|World|Codex|Unknown",
+              "used": true,
+              "note": "what it told you, or why it changed nothing" }
+          ],
           "answeredFromScreen": true,
           "weapons": ["orb", "wand"],
           "weaponsSource": "tooltip|mastery|skills|icon",
@@ -896,11 +901,12 @@ public static class TlSystemPrompt
         exactly what happened: Russian prose with English category labels beside it.
 
         **Shown to the player, so they go in the reply language:** `headline`, every `action`,
-        `rationale` and `category`, `missingInformation`, and `suggestBuildTarget`. `category` is
+        `rationale` and `category`, every `screens[].note`, `missingInformation`, and `suggestBuildTarget`. `category` is
         rendered on screen next to the step — "[Stat Points]" in English is wrong on a Russian answer.
 
         **Parsed by code, so they stay EXACTLY as specified here whatever the reply language:**
-        `screen` (the English enum values), `answeredFromScreen`, `weapons` and `weaponsSource` (the
+        `screen` and every `screens[].screen` (the English enum values), `answeredFromScreen`, `weapons`
+        and `weaponsSource` (the
         lowercase ids), `observedStats[].stat` (the English stat names), the keys of `cost`, and
         `affordable`. Translating any of these breaks parsing silently.
 
@@ -909,6 +915,25 @@ public static class TlSystemPrompt
         has to find it on their own screen. Gloss it once in their language beside it.
 
         Rules for the fields:
+
+        - **`screens` MUST have exactly one entry per image you were sent, in the same order.** Sent four
+          images, write four entries. This is not bookkeeping: it is the only thing standing between an
+          honest answer and one that quietly ignores what the player went and fetched for you.
+
+          It has happened. Four screens were sent — character sheet, Rune Book, an irrelevant one, and the
+          Artifact page — and the reply used the character sheet and the artifact page, said nothing
+          whatsoever about runes, and reported a single recognised screen. From the player's side that is
+          indistinguishable from three screenshots being thrown away.
+
+          `used: false` is a perfectly good answer, and the open-world capture in that set deserved it.
+          What is not acceptable is leaving a screen out of the list.
+
+        - **IF A SCREEN SHOWS A SYSTEM, THE ADVICE MUST ADDRESS THAT SYSTEM OR SAY WHY NOT.** A Rune Book
+          or Artifact page in front of you is the player answering the question you would otherwise have
+          asked. Runes and artifacts are the two systems most often left partly empty, and runes were the
+          single biggest Combat Power gap on the reference character. An attached Rune Book with empty or
+          low-level sockets and no rune step in your answer is a wrong answer, however good the other
+          steps are. If the runes genuinely look fine, say so in that screen's `note` — one line.
 
         - `screen` is YOUR identification of what you are looking at. Nobody told you: the player
           presses a hotkey whenever they want an answer, so the screenshot is whatever was in front

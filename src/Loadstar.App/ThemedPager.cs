@@ -29,7 +29,7 @@ internal sealed class ThemedPager : Panel
         _header = new FlowLayoutPanel
         {
             Dock = DockStyle.Top,
-            Height = 34,
+            Height = Theme.RowHeight(lines: 1, extra: 12),
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = false,
             Padding = new Padding(0),
@@ -65,7 +65,9 @@ internal sealed class ThemedPager : Panel
             Text = title,
             AutoSize = false,
             Width = 150,
-            Height = 32,
+            // The tab label is translated, so its height must come from the font rather than a literal.
+            // AutoSize is off here on purpose — the tabs are a fixed 150px wide so they line up.
+            Height = Theme.RowHeight(lines: 1, extra: 10),
             FlatStyle = FlatStyle.Flat,
             Font = Theme.UiFont,
             Margin = new Padding(0),
