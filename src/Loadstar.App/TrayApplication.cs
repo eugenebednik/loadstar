@@ -323,9 +323,22 @@ internal sealed class TrayApplication : IDisposable
             }
             else if (_openAsk is { } asking)
             {
-                asking.Activate();
+                // ADD A SCREEN. The hotkey is the whole point of the multi-screen queue: the screens the
+                // advice needs cannot be open at once, so the player alt-tabs to the game, opens the next
+                // one, and presses the same key again.
+                //
+                // It has to close the dialog rather than capture in place, for the same reason the first
+                // capture happens before the dialog opens: the capture is a region grab of the game's
+                // bounds, so an open dialog ends up in the picture. Setting DialogResult closes a modal
+                // form, and the capture loop reopens it with the new screen appended.
+                //
+                // Same result the Add button produces, so there is one code path and not two.
+                Core.Diagnostics.Log.Info(
+                    "Hotkey: pressed with the ask window open — adding a screen. "
+                    + "(If this line never appears while that window is up, WM_HOTKEY is not reaching "
+                    + "HotkeyHost during the modal loop and the Add button is the only way in.)");
 
-                ShowBalloon(Strings.Get("busy.asking.title"), Strings.Get("busy.asking"));
+                asking.DialogResult = AskWindow.AddAnother;
             }
             else
             {
@@ -384,9 +397,12 @@ internal sealed class TrayApplication : IDisposable
                 // Worth the loop because the hotkey fires on whatever happens to be on screen, and a capture
                 // of the open world answers almost nothing. Before this, that cost the player the entire
                 // interaction: cancel, navigate, find the hotkey, retype the question.
-                CapturedFrame frame;
+                // THE QUEUE, not a frame. Up to four screens travel with one question; see
+                // PendingCaptures for why four, and why the oldest goes rather than the newest bouncing.
+                var shots = new PendingCaptures();
                 string question;
                 string? carried = null;
+                var appending = false;
 
                 while (true)
                 {
@@ -407,13 +423,29 @@ internal sealed class TrayApplication : IDisposable
                         return;
                     }
 
-                    var candidate = result.Frame;
+                    // Append or replace. Retake means the screenshot was of the wrong screen, and keeping
+                    // it would send the wrong screen alongside the right one.
+                    if (appending)
+                    {
+                        shots.Add(result.Frame);
+                    }
+                    else
+                    {
+                        shots.Replace(result.Frame);
+                    }
 
-                    using var stream = new MemoryStream(candidate.Png);
-                    using var preview = Image.FromStream(stream);
+                    appending = false;
+
+                    Core.Diagnostics.Log.Info(
+                        $"Ask: {shots.Count} screen(s) queued"
+                        + (shots.IsFull ? ", at the maximum — the next capture replaces the oldest." : "."));
 
                     using var ask = new AskWindow(
-                        (Image)preview.Clone(), candidate.WindowTitle, _recentQuestions, carried);
+                        shots.Frames,
+                        result.Frame.WindowTitle,
+                        Hotkey.TryParse(settings.Overlay.CaptureHotkey)?.Display ?? settings.Overlay.CaptureHotkey,
+                        _recentQuestions,
+                        carried);
 
                     _openAsk = ask;
 
@@ -428,10 +460,15 @@ internal sealed class TrayApplication : IDisposable
                         _openAsk = null;
                     }
 
-                    if (choice == DialogResult.Retry)
+                    // Whatever the player deleted in the strip is gone before anything else happens, so a
+                    // rejected screen cannot survive a retake or an add.
+                    shots.Keep(ask.Kept);
+
+                    if (choice is DialogResult.Retry or AskWindow.AddAnother)
                     {
                         // Carry the typed question across, so fixing the screenshot does not cost the words.
                         carried = ask.Question;
+                        appending = choice == AskWindow.AddAnother;
 
                         // Cancelling the countdown abandons the whole interaction rather than firing a
                         // capture nobody is ready for.
@@ -448,7 +485,6 @@ internal sealed class TrayApplication : IDisposable
                         return;
                     }
 
-                    frame = candidate;
                     question = ask.Question;
                     break;
                 }
@@ -459,9 +495,13 @@ internal sealed class TrayApplication : IDisposable
                     _recentQuestions.Insert(0, question);
                 }
 
-                // A retake from the RESULT window re-enters the whole flow: capture, ask, analyse. The
-                // question is kept, so taking the advice to open a different screen costs one click.
-                while (await AnalyseAsync(frame, question, settings))
+                // A retake from the RESULT window captures again and re-asks with the SAME question.
+                //
+                // It APPENDS rather than replaces, which is the point of the whole feature: the model says
+                // "open the runes screen", and what it gets back should be the runes screen AND the
+                // character sheet it was already looking at, not the runes screen alone. Replacing was why
+                // a chain of "now open X" questions could never be answered as one.
+                while (await AnalyseAsync(shots.Frames, question, settings))
                 {
                     if (!WaitForRetake(whatToOpen: null))
                     {
@@ -485,7 +525,7 @@ internal sealed class TrayApplication : IDisposable
                         return;
                     }
 
-                    frame = again.Frame;
+                    shots.Add(again.Frame);
                 }
 
                 // A hotkey press landed while the answer was open. Restart from the capture rather than
@@ -521,7 +561,8 @@ internal sealed class TrayApplication : IDisposable
     }
 
     /// <returns>True when the player asked to retake the screenshot and try the same question again.</returns>
-    private async Task<bool> AnalyseAsync(CapturedFrame frame, string question, LoadstarSettings settings)
+    private async Task<bool> AnalyseAsync(
+        IReadOnlyList<CapturedFrame> frames, string question, LoadstarSettings settings)
     {
         var provider = settings.Ai.Provider;
         var providerInfo = AiCatalog.For(provider);
@@ -599,7 +640,8 @@ internal sealed class TrayApplication : IDisposable
             $"Analyse: build \"{target?.Name ?? "(none pinned)"}\", {allocated.Count} allocated stats, "
             + $"targets {(derived is null ? "unavailable" : "computed")}, "
             + $"{candidates.Count} candidate build(s). "
-            + $"Sending {frame.Png.Length / 1024}KB to {providerInfo.DisplayName} "
+            + $"Sending {frames.Count} screen(s), {frames.Sum(f => f.Png.Length) / 1024}KB, "
+            + $"to {providerInfo.DisplayName} "
             + $"as {AiProviderFactory.ResolveModel(provider, settings.Ai.Model)}.");
 
         using var client = AiProviderFactory.Create(provider, apiKey);
@@ -620,8 +662,15 @@ internal sealed class TrayApplication : IDisposable
                     derived,
                     candidates,
                     catalog),
-                UserPrompt = BuildUserPrompt(question, allocated),
-                Images = [new CapturedImage { Png = frame.Png, Label = frame.Label }],
+                UserPrompt = BuildUserPrompt(question, allocated, frames.Count),
+                // Every queued screen, oldest first, each labelled with its position so the model can refer
+                // to one of them. Without the labels a multi-image request is four anonymous pictures and
+                // "the second screenshot" means nothing.
+                Images = [.. frames.Select((f, i) => new CapturedImage
+                {
+                    Png = f.Png,
+                    Label = frames.Count == 1 ? f.Label : $"screen {i + 1} of {frames.Count}",
+                })],
                 // 3000 was too tight and it failed in the field. Reasoning tokens are billed and
                 // budgeted as OUTPUT on every current model, so this ceiling is shared between the
                 // thinking and the answer — and a reply that thinks hard then gets cut off mid-JSON is
@@ -690,7 +739,13 @@ internal sealed class TrayApplication : IDisposable
         }
     }
 
-    private static string BuildUserPrompt(string question, IReadOnlyDictionary<TlStat, int> allocated)
+    /// <param name="screens">
+    /// How many screenshots are attached. Stated per turn rather than left to the system prompt, because
+    /// it varies per request and the system prompt is the cached, byte-stable part — putting a number
+    /// that changes into it would invalidate the cache on every question.
+    /// </param>
+    private static string BuildUserPrompt(
+        string question, IReadOnlyDictionary<TlStat, int> allocated, int screens)
     {
         var spread = allocated.Count > 0
             ? string.Join(", ", allocated.Select(a => $"{a.Key} {a.Value}"))
@@ -700,12 +755,19 @@ internal sealed class TrayApplication : IDisposable
             ? "The player asked nothing specific, so rank the highest-value next actions."
             : $"The player asks: \"{question}\"\n\nAnswer THAT question specifically.";
 
+        // Saying how many there are, and that they are probably different panels, stops the common
+        // failure of reading only the first image and answering from it.
+        var attached = screens == 1
+            ? "Here is the player's current screen."
+            : $"Here are {screens} screens the player captured, labelled in capture order. They are "
+              + "probably DIFFERENT panels, not the same one twice. Read all of them.";
+
         return $"""
-            Here is the player's current screen.
+            {attached}
 
             {asked}
 
-            Identify which screen this is; nobody has told you.
+            Identify which screen each one is; nobody has told you.
 
             The target build's allocated attribute points are: {spread}
 
