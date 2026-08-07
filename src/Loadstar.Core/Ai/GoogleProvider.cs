@@ -112,17 +112,35 @@ public sealed class GoogleProvider : HttpAiProvider
                     .Where(value => !string.IsNullOrEmpty(value)))
                 : string.Empty;
 
-        // Gemini 2.5 thinks by default and those tokens count against maxOutputTokens, so a ceiling
-        // sized for the answer alone can be spent entirely on reasoning and return nothing. That
-        // looks identical to a broken prompt unless the finish reason is read out.
-        if (string.IsNullOrWhiteSpace(text)
-            && candidate.TryGetProperty("finishReason", out var reason)
+        // Gemini thinks by default and those tokens count against maxOutputTokens, so a ceiling sized
+        // for the answer alone can be spent on reasoning and leave the answer unfinished.
+        //
+        // THIS IS CHECKED WHETHER OR NOT THERE IS TEXT, and that is the whole point. It used to be
+        // guarded by `string.IsNullOrWhiteSpace(text)`, which caught only total starvation — the case
+        // where reasoning ate everything and nothing came back. The commoner and nastier case is
+        // PARTIAL: reasoning eats most of the budget, the model starts its JSON object, and the reply
+        // is cut off mid-way. That returned a truncated string as though it were complete, and the
+        // failure surfaced downstream as "The model's reply contained no JSON object" — which points
+        // at the prompt, the parser, anything except the token ceiling that actually caused it.
+        //
+        // Observed in the field: a 658-character reply, cut off mid-object, reported as malformed JSON.
+        if (candidate.TryGetProperty("finishReason", out var reason)
             && reason.GetString() is { } finish
             && !finish.Equals("STOP", StringComparison.OrdinalIgnoreCase))
         {
+            var truncated = !string.IsNullOrWhiteSpace(text);
+
             throw new AiProviderException(
-                $"Gemini stopped before answering (finishReason: {finish}). "
-                + "If this is MAX_TOKENS, the reply budget was spent on reasoning — raise it.");
+                $"Gemini stopped before finishing (finishReason: {finish}). "
+                + (truncated
+                    ? $"It returned {text.Length} characters of an incomplete answer, which cannot be used. "
+                    : "It returned nothing at all. ")
+                + "If this is MAX_TOKENS, the reply budget was spent on reasoning — raise MaxOutputTokens.")
+            {
+                // Worth retrying: the same request under a larger budget, or a shorter reasoning pass,
+                // may well succeed. Nothing about the request itself is invalid.
+                IsTransient = finish.Equals("MAX_TOKENS", StringComparison.OrdinalIgnoreCase),
+            };
         }
 
         return text;

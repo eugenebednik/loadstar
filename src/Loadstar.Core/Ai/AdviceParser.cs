@@ -18,8 +18,17 @@ public static class AdviceParser
     {
         ArgumentNullException.ThrowIfNull(responseText);
 
+        // "No JSON object" and "an object that was cut off" look the same to the extractor and have
+        // OPPOSITE fixes: one means the model ignored the output contract, the other means the reply
+        // budget ran out. Reporting them identically sent one investigation at the prompt when the
+        // cause was a token ceiling, so they are now told apart before the message is written.
         var json = ExtractJsonObject(responseText)
-            ?? throw new AdviceParseException("The model's reply contained no JSON object.", responseText);
+            ?? throw new AdviceParseException(
+                responseText.Contains('{', StringComparison.Ordinal)
+                    ? "The model's reply started a JSON object but was cut off before finishing it — "
+                      + "the reply was truncated, most likely because the output token budget ran out."
+                    : "The model's reply contained no JSON object at all.",
+                responseText);
 
         JsonDocument document;
 

@@ -179,6 +179,22 @@ internal static class Theme
                     // checkbox ever looks wrong again, look here FIRST, not at the control.
                     break;
 
+                // BEFORE the Label case, which it derives from and would otherwise match. That
+                // inheritance is exactly how the checkbox spent three fixes being "uncheckable": a
+                // control fell into a base-class case here and had its constructor settings quietly
+                // overwritten at OnShown. A LinkLabel's link text is drawn with LinkColor rather than
+                // ForeColor, so the Label case would not visibly break it today — it would just leave
+                // link colours as whatever each window happened to set, which is how they drift.
+                case LinkLabel link:
+                    link.Font = UiFont;
+                    link.BackColor = Color.Transparent;
+                    link.ForeColor = SubtleText;
+                    link.LinkColor = Accent;
+                    link.ActiveLinkColor = Text;
+                    link.VisitedLinkColor = Accent;
+                    link.LinkBehavior = LinkBehavior.HoverUnderline;
+                    break;
+
                 case Label label:
                     label.ForeColor = label.Font.Size > 11 ? Text : SubtleText;
                     label.BackColor = Color.Transparent;

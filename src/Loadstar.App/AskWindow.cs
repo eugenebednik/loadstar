@@ -14,11 +14,19 @@ namespace Loadstar.App;
 /// </summary>
 internal sealed class AskWindow : ThemedForm
 {
-    private static readonly string[] StarterQuestions =
+    /// <summary>
+    /// The starter questions, in the player's own language.
+    ///
+    /// <para>A property rather than a static field: <see cref="Strings"/> resolves against the language
+    /// selected in settings, and a static initialiser would freeze whichever language happened to be
+    /// current when the type was first touched. That is the kind of bug that only shows up after
+    /// someone changes language and reopens the dialog.</para>
+    /// </summary>
+    private static string[] StarterQuestions =>
     [
-        "What should I set my stat points to?",
-        "Best way to progress the gear I have equipped?",
-        "What's the highest-value thing to do next?",
+        Strings.Get("ask.starter.stats"),
+        Strings.Get("ask.starter.gear"),
+        Strings.Get("ask.starter.next"),
     ];
 
     private readonly TextBox _question;
@@ -36,11 +44,11 @@ internal sealed class AskWindow : ThemedForm
         ClientSize = new Size(760, 620);
         TopMost = true;
 
-        var heading = CreateHeading("Ask about this screen");
+        var heading = CreateHeading(Strings.Get("ask.title"));
 
         var caption = new Label
         {
-            Text = $"Captured from \"{windowTitle}\" — this exact image is what gets sent.",
+            Text = string.Format(Strings.Get("ask.caption"), windowTitle),
             Dock = DockStyle.Top,
             Height = 24,
             Padding = new Padding(16, 0, 16, 0),
@@ -74,16 +82,27 @@ internal sealed class AskWindow : ThemedForm
             Font = Theme.UiFont,
             ScrollBars = ScrollBars.Vertical,
             BorderStyle = BorderStyle.FixedSingle,
-            PlaceholderText = "Ask anything, or leave blank for a general review.  (Ctrl+Enter to send)",
+            PlaceholderText = Strings.Get("ask.placeholder"),
         };
 
+        // CLICKABLE LABELS, NOT BUTTONS, and stacked rather than in a row.
+        //
+        // These were secondary-styled Buttons laid out horizontally, which read as a tab strip —
+        // three rectangles in a row above a content area is the tab idiom whether or not that was the
+        // intent, and it invited being clicked as a mode switch rather than as text to insert.
+        //
+        // The row also forced truncation. Three questions of ~45 characters do not fit across 760px as
+        // buttons, so each was cut to 31 characters and given an ellipsis: "What should I set my stat
+        // poin…". A suggestion you cannot read is not a suggestion. Stacking them vertically gives each
+        // its full width, so the text is complete and Shorten() is gone.
         var suggestions = new FlowLayoutPanel
         {
             Dock = DockStyle.Top,
-            Height = 34,
-            Padding = new Padding(0, 0, 0, 6),
+            FlowDirection = FlowDirection.TopDown,
             WrapContents = false,
-            AutoScroll = false,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Padding = new Padding(0, 0, 0, 8),
             BackColor = Theme.Background,
         };
 
@@ -91,30 +110,45 @@ internal sealed class AskWindow : ThemedForm
         // every run after it.
         foreach (var suggestion in recentQuestions.Concat(StarterQuestions).Distinct().Take(3))
         {
-            var chip = new Button
+            var link = new LinkLabel
             {
-                Text = Shorten(suggestion),
+                Text = suggestion,
                 AutoSize = true,
                 Tag = suggestion,
-                Height = 26,
-                Margin = new Padding(0, 0, 6, 0),
+                Margin = new Padding(2, 0, 0, 4),
+                // A pathologically long recent question wraps rather than pushing the dialog wider.
+                MaximumSize = new Size(ClientSize.Width - 48, 0),
+                Cursor = Cursors.Hand,
             };
 
-            Theme.MakeSecondary(chip);
-            chip.Click += (_, _) => { _question.Text = (string)chip.Tag!; _question.SelectionStart = _question.TextLength; };
-            suggestions.Controls.Add(chip);
+            // Colours and hover behaviour come from Theme.Apply's LinkLabel case, so every link in the
+            // app looks the same and none of them carries its own palette.
+            link.LinkClicked += (_, _) =>
+            {
+                _question.Text = (string)link.Tag!;
+                _question.Focus();
+                _question.SelectionStart = _question.TextLength;
+            };
+
+            suggestions.Controls.Add(link);
         }
 
-        var ask = new Button { Text = "Ask", DialogResult = DialogResult.OK };
-        var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel };
+        // These four strings were already translated into all nine languages and the dialog simply
+        // never asked for them, so a player with Russian selected got an English dialog. Wiring them
+        // up costs nothing and was the whole gap.
+        var ask = new Button { Text = Strings.Get("ask.send"), DialogResult = DialogResult.OK };
+        var cancel = new Button { Text = Strings.Get("common.cancel"), DialogResult = DialogResult.Cancel };
 
         Theme.MakePrimary(ask);
         Theme.MakeSecondary(cancel);
 
+        // Taller than before, because the stacked suggestions occupy three lines where the old chip row
+        // occupied one. Sized so the text box keeps roughly the height it had rather than being
+        // squeezed — the last thing this dialog needs is a cramped box the user is meant to type into.
         var lower = new Panel
         {
             Dock = DockStyle.Bottom,
-            Height = 150,
+            Height = 210,
             Padding = new Padding(16, 4, 16, 4),
             BackColor = Theme.Background,
         };
@@ -143,9 +177,6 @@ internal sealed class AskWindow : ThemedForm
 
         Shown += (_, _) => { Activate(); _question.Focus(); };
     }
-
-    private static string Shorten(string value) =>
-        value.Length <= 34 ? value : value[..31] + "…";
 
     protected override void Dispose(bool disposing)
     {

@@ -365,7 +365,16 @@ internal sealed class TrayApplication : IDisposable
                     candidates),
                 UserPrompt = BuildUserPrompt(question, allocated),
                 Images = [new CapturedImage { Png = frame.Png, Label = frame.Label }],
-                MaxOutputTokens = 3000,
+                // 3000 was too tight and it failed in the field. Reasoning tokens are billed and
+                // budgeted as OUTPUT on every current model, so this ceiling is shared between the
+                // thinking and the answer — and a reply that thinks hard then gets cut off mid-JSON is
+                // indistinguishable, downstream, from a model that cannot follow the output contract.
+                //
+                // The answer itself is small (a headline, a few steps, some costs). What varies is the
+                // reasoning, and non-Latin replies make it worse: Cyrillic runs roughly two to three
+                // tokens per character, so the same answer in Russian costs several times an English
+                // one. Sized for the worst of those rather than the average.
+                MaxOutputTokens = 8000,
             },
             CancellationToken.None);
 
@@ -611,6 +620,23 @@ internal sealed class TrayApplication : IDisposable
     public static void ReportError(string title, Exception ex)
     {
         Core.Diagnostics.Log.Error(title, ex);
+
+        // THE REPLY ITSELF, when the failure was in reading it. AdviceParseException has carried the
+        // raw text since it was written, and nothing ever logged it — so a parse failure recorded a
+        // stack trace saying the reply "contained no JSON object" and left no way to see what the reply
+        // actually was. That is the one piece of evidence needed to tell a truncated answer from a
+        // model ignoring the output contract, and they have opposite fixes.
+        //
+        // Truncated to keep a 1MB rotating log useful; the head is where the shape is visible anyway.
+        if (ex is Core.Ai.AdviceParseException { ResponseText: { Length: > 0 } reply })
+        {
+            const int limit = 2000;
+
+            Core.Diagnostics.Log.Warn(
+                $"Unparseable reply, {reply.Length} chars:{Environment.NewLine}"
+                + reply[..Math.Min(limit, reply.Length)]
+                + (reply.Length > limit ? $"{Environment.NewLine}[...{reply.Length - limit} more]" : string.Empty));
+        }
 
         var detail = ex.Message;
 
