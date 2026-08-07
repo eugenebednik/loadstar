@@ -43,14 +43,34 @@ ceiling and widen the range, while balanced stats lift the whole band. The *fami
 outright in the tooltips and is solid; **the multipliers are inference from few samples**, so do not
 present them as exact.
 
-## Stats are redistributable, and that makes it the cheapest action available
+## Only the ALLOCATED points are redistributable — the rest is welded to your gear
 
-The total pool is **accumulated from gear**, and the **"Stat Change"** button reallocates it freely.
-Every other recommendation costs Sollant, tokens, materials or time. **Redistribution costs none of
-those**, so check the spread against the target build first, every session.
+Every displayed total is four things added together:
 
-**Never treat a spread as a sunk constraint.** "Your Strength is low, so pick Strength-scaling gear"
-is backwards — the spread is an output the player controls.
+```
+total = 10 (everyone's floor) + allocated + equipment + Stellar Journey
+```
+
+**"Stat Change" moves `allocated` and nothing else.** Equipment and Stellar Journey contributions are
+fixed while that gear is worn, so **every stat has a floor of `10 + equipment + Stellar Journey`** and
+cannot be taken below it.
+
+**A displayed total tells you nothing about how much of it is movable.** Wisdom 95 might be fifty
+allocated points or zero. This section previously said the pool "accumulated from gear" and was
+"reallocated freely", and acting on that produced advice to *"take the excess points out of Dexterity
+(86) and bring Fortitude to 80"* — on a character with **nothing** allocated to Fortitude, where all
+71 came from gear and it could not be lowered by a single point.
+
+So: the character sheet does **not** show the split. Only a stat's **hover tooltip** does, as
+`Base / Equipment / Stellar Journey`. **Without it, do not propose a specific move** — name the
+thresholds that are close, say a redistribution may help, and ask for one hover. Never write "excess
+points in X" from a displayed total.
+
+It remains the cheapest correction available **when there is something allocated to move**, which is
+why it stays high in the ordering — just not unconditionally.
+
+**Never treat a spread as a sunk constraint either.** "Your Strength is low, so pick Strength-scaling
+gear" is backwards — the allocated part is an output the player controls.
 
 ## Cost escalates on BASE, not on the displayed total
 

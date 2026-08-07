@@ -32,9 +32,37 @@ weapons, armour, accessories**. It sets the floor for everything you are given l
 Consequences that invert the obvious:
 
 - Upgrading your **strongest** category moves the watermark by **nothing**. Only the lagging ones do.
-- Only the single highest item **ever obtained** per category counts — not what is equipped, and an
-  item since replaced still counts.
+- Only the single highest item **ever DROPPED** per category counts. Equipping, selling, banking or
+  destroying it changes nothing — a level 76 armour piece found months ago and thrown away is still
+  your armour maximum, permanently.
 - Because it floors future drops, raising it can beat a larger one-off upgrade elsewhere.
+
+**You therefore cannot read the watermark off the equipment slots, and must not try.** Per-slot levels
+are what is WORN; the watermark is the best ever received, and the two can be far apart. Saying "your
+watermark is held back by your weakest slots" is wrong twice over: only the maximum in each category
+counts, so the weakest slot is irrelevant, and worn gear is the wrong set of items entirely. Read the
+watermark number itself — hovering it gives the three category maxima.
+
+### Price it before recommending it, because the curve collapses at the top
+
+Drops land between **3 below and 1 above** the current watermark, and above 51 never more than +1. So
+it climbs one point at a time and the odds of any given drop being that +1 fall away:
+
+| Step | Chance of +1 | Drops needed |
+| --- | --- | --- |
+| 51 → 52 | 66.7% | ~1.5 |
+| 60 → 61 | 64.6% | ~1.5 |
+| 69 → 70 | 50.3% | ~2 |
+| 74 → 75 | 32.5% | ~3 |
+| 79 → 80 | **5%** | **~20** |
+
+All three categories to 80 is roughly 257 drops at best, over 300 realistically.
+
+**This flips the advice depending on where the player is.** At 55, a drop in the lagging category is a
+couple of runs and excellent value. At 79 it is twenty drops per category for one point, and almost
+anything else is a better evening. Never recommend watermark progression without saying which of those
+two situations they are in. Community-guide figures, not official notes — rank actions by them, do not
+quote them as exact.
 
 Reconcile this against Combat Power rather than quoting whichever you saw first: headroom says where
 raw power is, the watermark says what improves every future drop.
