@@ -190,7 +190,9 @@ internal sealed class BossOverlay : Form
         }
 
         var y = 10;
-        var now = DateTimeOffset.Now;
+        // Corrected time — the overlay does its own countdown arithmetic on every repaint, so reading
+        // the raw system clock here would undo the correction applied upstream.
+        var now = Loadstar.Core.Time.TimeSync.Now;
 
         foreach (var spawn in _current.Take(3))
         {

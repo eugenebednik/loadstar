@@ -45,6 +45,11 @@ internal sealed class TrayApplication : IDisposable
         _secrets = new SecretStore(_store.Directory);
         _capture = new WindowsGraphicsCaptureSource();
 
+        // Every launch, as requested, and fire-and-forget: a countdown must never wait on a time
+        // server. Until it lands, TimeSync falls through to the system clock, so the worst case is the
+        // behaviour that existed before this — the first second or two of a session is uncorrected.
+        _ = SynchroniseTimeAsync();
+
         _gated = new ConsentGatedCaptureSource(
             _capture,
             hasConsent: () => _store.Load().CaptureConsentGiven,
@@ -84,6 +89,47 @@ internal sealed class TrayApplication : IDisposable
                 "Capture unavailable",
                 "Windows Graphics Capture needs Windows 10 version 2004 (build 19041) or newer.",
                 ToolTipIcon.Warning);
+        }
+    }
+
+    /// <summary>
+    /// Checks the machine's clock against several independent sources, once per launch.
+    ///
+    /// <para>Worth doing because every countdown is <c>spawn - now</c> and nothing inside the app could
+    /// notice a wrong clock — the schedule would be right, the arithmetic right, and the answer wrong.
+    /// </para>
+    ///
+    /// <para>Balloons only when several sources AGREE the drift is large, and only to report it — the
+    /// system clock is never altered. See <see cref="Core.Time.TimeSync"/> for why consensus rather than
+    /// a single time service: the first version of this trusted one, was told this machine was 21 minutes
+    /// fast, and would have injected that error into a clock that was in fact accurate to 93ms.</para>
+    /// </summary>
+    private async Task SynchroniseTimeAsync()
+    {
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+            await Core.Time.TimeSync.SynchroniseAsync(http, CancellationToken.None);
+
+            if (!Core.Time.TimeSync.IsClockNoticeablyWrong)
+            {
+                return;
+            }
+
+            var offset = Core.Time.TimeSync.Offset;
+            var ahead = offset < TimeSpan.Zero;
+
+            ShowBalloon(
+                Strings.Get("time.driftTitle"),
+                string.Format(
+                    Strings.Get(ahead ? "time.driftAhead" : "time.driftBehind"),
+                    offset.Duration().ToString(@"hh\:mm\:ss")),
+                ToolTipIcon.Warning);
+        }
+        catch (Exception ex)
+        {
+            // A clock check must never be able to stop the app starting.
+            Core.Diagnostics.Log.Warn($"Time sync: skipped ({ex.GetType().Name}: {ex.Message}).");
         }
     }
 

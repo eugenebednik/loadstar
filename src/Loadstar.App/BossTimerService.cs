@@ -90,7 +90,9 @@ internal sealed class BossTimerService : IDisposable
         }
 
         var zone = ResolveTimeZone(settings.Game.ServerTimeZone);
-        var now = DateTimeOffset.Now;
+        // Corrected time, not the system clock. The machine this was written on was 21 minutes fast
+        // with the Windows Time service stopped, which silently made every countdown 21 minutes wrong.
+        var now = Core.Time.TimeSync.Now;
         var spawns = _schedule.NextSpawns(now, settings.Game.Region, zone, count: 3);
 
         // Trim anything beyond the horizon. Thursday and Monday have no spawns at all, so on a
@@ -171,7 +173,9 @@ internal sealed class BossTimerService : IDisposable
             return;
         }
 
-        var now = DateTimeOffset.Now;
+        // Same source as NextSpawns, or an alert would fire against a different clock than the
+        // countdown it belongs to.
+        var now = Core.Time.TimeSync.Now;
 
         foreach (var spawn in NextSpawns())
         {
