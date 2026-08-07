@@ -39,6 +39,39 @@ internal sealed class TrayApplication : IDisposable
     private static NotifyIcon? _errorSink;
     private bool _busy;
 
+    /// <summary>
+    /// The games this build can advise on. One today; the player will choose here once there are
+    /// several. Registered rather than discovered so what ships is readable in one place.
+    /// </summary>
+    private readonly Core.Games.GameCatalog _games = new(new ThroneAndLibertyModule());
+
+    /// <summary>
+    /// The module for the configured game.
+    ///
+    /// <para>Falls back to the default when the stored id is unknown, and SAYS SO — a settings file
+    /// naming a game this build does not have is worth reporting, because silently advising on a
+    /// different game is exactly the confidently-wrong outcome to avoid.</para>
+    /// </summary>
+    private Core.Games.IGameModule Game
+    {
+        get
+        {
+            var configured = _store.Load().GameId;
+            var module = _games.Find(configured);
+
+            if (module is not null)
+            {
+                return module;
+            }
+
+            Core.Diagnostics.Log.Warn(
+                $"Game: settings name '{configured}', which this build does not have. "
+                + $"Using {_games.Default.DisplayName}.");
+
+            return _games.Default;
+        }
+    }
+
     public TrayApplication()
     {
         _store = new SettingsStore();
@@ -300,9 +333,9 @@ internal sealed class TrayApplication : IDisposable
                 var result = await _gated.CaptureAsync(
                     new CaptureRequest
                     {
-                        Target = settings.Capture.ToWindowTarget(),
-                        Region = ScreenRegions.FullWindow,
-                        PrivacyMasks = ScreenRegions.PrivacyMasks,
+                        Target = settings.Capture.ToWindowTarget(Game.DefaultProcessName, Game.DefaultWindowTitleMatch),
+                        Region = Game.FullWindow,
+                        PrivacyMasks = Game.PrivacyMasks,
                         Label = "game window",
                         Timeout = TimeSpan.FromSeconds(8),
                     },
@@ -367,9 +400,9 @@ internal sealed class TrayApplication : IDisposable
                 var again = await _gated.CaptureAsync(
                     new CaptureRequest
                     {
-                        Target = settings.Capture.ToWindowTarget(),
-                        Region = ScreenRegions.FullWindow,
-                        PrivacyMasks = ScreenRegions.PrivacyMasks,
+                        Target = settings.Capture.ToWindowTarget(Game.DefaultProcessName, Game.DefaultWindowTitleMatch),
+                        Region = Game.FullWindow,
+                        PrivacyMasks = Game.PrivacyMasks,
                         Label = "game window",
                         Timeout = TimeSpan.FromSeconds(8),
                     },

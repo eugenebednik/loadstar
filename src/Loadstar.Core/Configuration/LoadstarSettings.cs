@@ -84,8 +84,15 @@ public sealed record CaptureSettings
     /// </summary>
     public string? WindowProcessName { get; init; }
 
-    /// <summary>Window title substring. A fallback, subordinate to <see cref="WindowProcessName"/>.</summary>
-    public string WindowTitleMatch { get; init; } = "THRONE AND LIBERTY";
+    /// <summary>
+    /// Window title substring. A fallback, subordinate to <see cref="WindowProcessName"/>.
+    ///
+    /// <para><b>Empty by default, and the game module supplies the fallback.</b> This used to default to
+    /// "THRONE AND LIBERTY" — one game's title hardcoded into the settings record every game shares,
+    /// which is precisely the thing that has to go before the player can choose a game. Core cannot know
+    /// which game is selected, so it no longer pretends to.</para>
+    /// </summary>
+    public string WindowTitleMatch { get; init; } = string.Empty;
 
     /// <summary>Permits a title match to select a browser or chat app. Off unless the user means it.</summary>
     public bool AllowAnyProcess { get; init; }
@@ -103,15 +110,34 @@ public sealed record CaptureSettings
     /// </summary>
     public bool ManualOnly { get; init; } = true;
 
-    /// <summary>Resolves the configured target into the form the capture source consumes.</summary>
-    public Capture.WindowTarget ToWindowTarget() => new()
+    /// <summary>
+    /// Resolves the configured target into the form the capture source consumes.
+    /// </summary>
+    /// <param name="defaultProcessName">
+    /// The selected game's process name, used when the player has not picked a window. Process match is
+    /// the primary route because matching on title once selected a Firefox window that had a build page
+    /// open, and the cost of that mistake is a private screen sent to a third party.
+    /// </param>
+    /// <param name="defaultTitleMatch">
+    /// The selected game's window title, used only when nothing else identifies the window. Supplied by
+    /// the caller because Core does not know which game is selected.
+    /// </param>
+    public Capture.WindowTarget ToWindowTarget(
+        string? defaultProcessName = null,
+        string? defaultTitleMatch = null)
     {
-        ProcessName = string.IsNullOrWhiteSpace(WindowProcessName)
-            ? null
-            : Capture.WindowTargeting.NormalizeProcessName(WindowProcessName),
-        TitleMatch = WindowTitleMatch,
-        AllowAnyProcess = AllowAnyProcess,
-    };
+        var process = string.IsNullOrWhiteSpace(WindowProcessName) ? defaultProcessName : WindowProcessName;
+        var title = string.IsNullOrWhiteSpace(WindowTitleMatch) ? defaultTitleMatch : WindowTitleMatch;
+
+        return new Capture.WindowTarget
+        {
+            ProcessName = string.IsNullOrWhiteSpace(process)
+                ? null
+                : Capture.WindowTargeting.NormalizeProcessName(process),
+            TitleMatch = title ?? string.Empty,
+            AllowAnyProcess = AllowAnyProcess,
+        };
+    }
 }
 
 public sealed record CaptureRegion

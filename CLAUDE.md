@@ -124,8 +124,11 @@ The general rule: **the window Loadstar reads is the player's explicit choice, c
 not something inferred fresh on every capture.** Inference here is cheap to get wrong and the cost
 of being wrong is sending the player's private screen to a third party.
 
-Note the process name for Throne and Liberty is **not yet recorded here** — capture it from a live
-client and write it down, so the default configuration can be right out of the box.
+The process name is **`TL`**, read off a live client on 2026-08-04 (build 1.443.22.7936). It ships
+as the default in `ThroneAndLibertyModule.DefaultProcessName`, so a fresh install targets the right
+window without the player configuring anything. This paragraph previously said the name was not
+recorded, while a section further down had already recorded it — a file contradicting itself is
+worse than a gap, because both halves read as authoritative.
 
 ## The character sheet is the highest-value capture
 
