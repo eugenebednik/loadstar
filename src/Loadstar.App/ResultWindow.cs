@@ -109,14 +109,16 @@ internal sealed class ResultWindow : ThemedForm
 
         if (!string.IsNullOrWhiteSpace(question))
         {
-            text.AppendLine($"You asked: {question}").AppendLine();
+            text.AppendLine(string.Format(Strings.Get("result.youAsked"), question)).AppendLine();
         }
 
-        text.AppendLine($"Screen recognised as: {advice.RecognizedScreen}");
+        // The screen NAME is an English enum value the model reports and code parses; the label around
+        // it is ours to translate.
+        text.AppendLine(string.Format(Strings.Get("result.screen"), advice.RecognizedScreen));
 
         if (!advice.AnsweredFromScreen)
         {
-            text.AppendLine("NOTE: this screen cannot fully answer that question — see 'Could not see' below.");
+            text.AppendLine(Strings.Get("result.note.wrongScreen"));
         }
 
         // The headline is the window's heading, so it is not repeated here.
@@ -131,10 +133,19 @@ internal sealed class ResultWindow : ThemedForm
                 text.AppendLine($"   [{step.Category}]");
             }
 
-            text.AppendLine(step.Cost.Count > 0
-                ? $"   Cost: {string.Join(", ", step.Cost.Select(c => $"{c.Value:N0} {c.Key}"))}" +
-                  (step.Affordable ? string.Empty : "   — NOT AFFORDABLE")
-                : "   Cost: free");
+            if (step.Cost.Count > 0)
+            {
+                // Currency NAMES stay as the model gave them: Sollant and Lucent are what the player
+                // sees in game, and a translated currency is one they cannot find.
+                var costs = string.Join(", ", step.Cost.Select(c => $"{c.Value:N0} {c.Key}"));
+
+                text.AppendLine($"   {string.Format(Strings.Get("result.cost"), costs)}"
+                    + (step.Affordable ? string.Empty : "   — " + Strings.Get("result.notAffordable")));
+            }
+            else
+            {
+                text.AppendLine($"   {Strings.Get("result.costFree")}");
+            }
 
             if (!string.IsNullOrWhiteSpace(step.Rationale))
             {
@@ -146,7 +157,7 @@ internal sealed class ResultWindow : ThemedForm
 
         if (advice.MissingInformation.Count > 0)
         {
-            text.AppendLine("Could not see:");
+            text.AppendLine(Strings.Get("result.couldNotSee"));
 
             foreach (var missing in advice.MissingInformation)
             {
@@ -156,25 +167,24 @@ internal sealed class ResultWindow : ThemedForm
             text.AppendLine();
         }
 
-        if (plan is not null && (plan.HasChanges || plan.Unpriceable.Count > 0))
+        // Rendered by PlanReport, not plan.Describe(): that method is English prose for the developer
+        // console, and this one is for the player.
+        if (plan is not null)
         {
-            text.AppendLine(new string('-', 70));
-            text.AppendLine("STAT REDISTRIBUTION — computed locally, not by the model");
-            text.AppendLine(new string('-', 70));
-            text.AppendLine(plan.Describe()).AppendLine();
-            text.AppendLine("Assumptions behind these numbers:");
+            var report = PlanReport.Render(plan);
 
-            foreach (var caveat in RedistributionPlan.Caveats)
+            if (!string.IsNullOrWhiteSpace(report))
             {
-                text.AppendLine($"  - {caveat}");
+                text.AppendLine(report);
             }
-
-            text.AppendLine();
         }
 
         if (advice.Usage is { } usage)
         {
-            text.AppendLine($"Tokens: {usage.InputTokens:N0} in, {usage.OutputTokens:N0} out");
+            text.AppendLine(string.Format(
+                Strings.Get("result.tokens"),
+                usage.InputTokens.ToString("N0"),
+                usage.OutputTokens.ToString("N0")));
         }
 
         return text.ToString().Replace("\n", Environment.NewLine);

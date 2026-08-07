@@ -93,6 +93,11 @@ public static class StatPlanner
         var moves = new List<StatMove>();
         var unpriceable = new List<string>();
 
+        // Structured alongside the prose above, because the same fact has two audiences: the dev
+        // console reads English, and the player reads their own language. Formatting it once as a
+        // sentence forced the app to either ship English or re-derive the reason from nothing.
+        var reasons = new List<UnpriceableStat>();
+
         foreach (var stat in TlStats.All)
         {
             if (!targetAllocated.TryGetValue(stat, out var target))
@@ -103,6 +108,7 @@ public static class StatPlanner
             if (!byStat.TryGetValue(stat, out var observed))
             {
                 unpriceable.Add($"{stat}: not read from the character sheet, so no comparison is possible.");
+                reasons.Add(new UnpriceableStat { Stat = stat, Total = null, Reason = UnpriceableReason.NotRead });
                 continue;
             }
 
@@ -111,6 +117,12 @@ public static class StatPlanner
                 unpriceable.Add(
                     $"{stat}: showing {observed.Total}, but the Base/Equipment split is unknown. " +
                     "Hover the stat and capture its tooltip — cost depends on base, not on the displayed total.");
+                reasons.Add(new UnpriceableStat
+                {
+                    Stat = stat,
+                    Total = observed.Total,
+                    Reason = UnpriceableReason.SplitUnknown,
+                });
                 continue;
             }
 
@@ -145,6 +157,7 @@ public static class StatPlanner
         {
             Moves = moves,
             Unpriceable = unpriceable,
+            UnpriceableStats = reasons,
         };
     }
 }
@@ -241,8 +254,15 @@ public sealed record RedistributionPlan
 {
     public required IReadOnlyList<StatMove> Moves { get; init; }
 
-    /// <summary>Stats that could not be priced, each with the capture that would fix it.</summary>
+    /// <summary>
+    /// Stats that could not be priced, as English prose. Used by the dev console and kept so its output
+    /// does not change; the app renders <see cref="UnpriceableStats"/> instead so the player sees their
+    /// own language.
+    /// </summary>
     public required IReadOnlyList<string> Unpriceable { get; init; }
+
+    /// <summary>The same facts, structured, so any caller can phrase them however it needs to.</summary>
+    public IReadOnlyList<UnpriceableStat> UnpriceableStats { get; init; } = [];
 
     public IEnumerable<StatMove> Changes => Moves.Where(m => !m.IsNoOp);
 
@@ -360,4 +380,28 @@ public sealed record RedistributionPlan
         "Projected totals hold equipment and Stellar Journey contributions constant. New gear changes " +
         "them, so a re-check is due after any upgrade.",
     ];
+}
+
+/// <summary>Why a stat could not be priced. Two cases, and they need different advice.</summary>
+public enum UnpriceableReason
+{
+    /// <summary>The stat was not on the captured screen at all.</summary>
+    NotRead,
+
+    /// <summary>
+    /// The total was read but the Base/Equipment split was not, and cost depends on base. Fixed by one
+    /// hover — which is why it is worth telling the player apart from the case above.
+    /// </summary>
+    SplitUnknown,
+}
+
+/// <summary>One stat that could not be priced, with enough detail to say so in any language.</summary>
+public sealed record UnpriceableStat
+{
+    public required TlStat Stat { get; init; }
+
+    /// <summary>The displayed total, when it was read. Null for <see cref="UnpriceableReason.NotRead"/>.</summary>
+    public required int? Total { get; init; }
+
+    public required UnpriceableReason Reason { get; init; }
 }
