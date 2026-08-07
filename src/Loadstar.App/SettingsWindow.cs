@@ -116,13 +116,12 @@ internal sealed class SettingsWindow : ThemedForm
         MaximizeBox = false;
         MinimizeBox = false;
 
-        // Tall enough that nothing needs a scrollbar. The scrollbar was not just ugly — WinForms
-        // renders it in the system light style regardless of theme, so avoiding it entirely is
-        // simpler than fighting it, and the content genuinely fits.
-        // 860 rather than 700: the provider row, its billing note and the model price hint added
-        // four rows to the General tab. A scrollbar is the thing being avoided — WinForms renders it
-        // in the system light style regardless of theme, so growing the window is simpler than
-        // fighting it, and the content genuinely fits at this height.
+        // A STARTING height only. FitToContent grows it in OnLoad to whatever the tallest tab measures,
+        // because this number went stale every time a row was added and nothing noticed — the claim that
+        // "the content genuinely fits" was false by 81px, hiding the last row of the General tab.
+        //
+        // Avoiding a scrollbar is still the goal: WinForms draws them in the system light style whatever
+        // the theme, so growing the window is simpler than fighting that.
         ClientSize = new Size(760, 950);
 
         var tabs = new ThemedPager { Dock = DockStyle.Fill };
@@ -191,6 +190,64 @@ internal sealed class SettingsWindow : ThemedForm
     /// Now that it runs at <c>OnLoad</c> the ordering is guaranteed: the handles have already been
     /// recreated by the time this fires.</para>
     /// </summary>
+    /// <summary>
+    /// Positions the form rows, once, after <c>base.OnLoad</c> has applied the theme.
+    ///
+    /// <para>Order is the whole point and it is not incidental: the theme assigns fonts, DPI scaling has
+    /// already rescaled child bounds by now, and row heights are derived from measured text. Arranging any
+    /// earlier measures against the wrong font or gets scaled twice.</para>
+    /// </summary>
+    protected override void OnLoad(EventArgs e)
+    {
+        base.OnLoad(e);
+
+        foreach (var grid in _grids)
+        {
+            grid.Arrange();
+        }
+
+        FitToContent();
+    }
+
+    /// <summary>
+    /// Grows the window to whatever the tallest tab actually needs.
+    ///
+    /// <para><b>This fixes a clip that predates the layout change and was invisible.</b> ClientSize was a
+    /// literal 950 with a comment claiming "the content genuinely fits" — it did not. The General tab needs
+    /// 880px of grid against 799 available, so the last row, which shows where the settings file lives, was
+    /// off the bottom edge. A TableLayoutPanel could never have caught this: it never told anyone how tall it
+    /// had become, which is why the literal went stale unnoticed as rows were added.</para>
+    ///
+    /// <para>Clamped to the monitor's working area, so a small display gets as much as it can rather than a
+    /// window with its buttons under the taskbar. Save and Cancel live in the action bar outside the grid, so
+    /// they stay reachable even when a tab cannot be shown whole.</para>
+    ///
+    /// <para>Runs before the window is visible, so there is no resize to watch. Widening is not attempted —
+    /// the field column wraps to the width it is given, and re-arranging after a width change would mean
+    /// measuring twice.</para>
+    /// </summary>
+    private void FitToContent()
+    {
+        var needed = _grids.Max(g => g.ContentHeight);
+        var have = _grids[0].ClientSize.Height;
+        var deficit = needed - have;
+
+        if (deficit <= 0)
+        {
+            return;
+        }
+
+        var ceiling = Screen.FromControl(this).WorkingArea.Height - 48;
+        var grown = Math.Min(ClientSize.Height + deficit, ceiling);
+
+        Core.Diagnostics.Log.Info(
+            $"Settings: tallest tab needs {needed}px, {have}px available. "
+            + $"Growing the window {ClientSize.Height} -> {grown}"
+            + (grown < ClientSize.Height + deficit ? " (clamped to the working area)." : "."));
+
+        ClientSize = new Size(ClientSize.Width, grown);
+    }
+
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
@@ -268,65 +325,44 @@ internal sealed class SettingsWindow : ThemedForm
     private const int FieldWidth = 420;
 
     /// <summary>
+    /// Every grid on the dialog, so <see cref="OnLoad"/> can arrange them all once the theme and DPI
+    /// scaling have settled. See <see cref="FormGrid.Arrange"/> for why that is the only correct moment.
+    /// </summary>
+    private readonly List<FormGrid> _grids = [];
+
+    /// <summary>
     /// A two-column form grid.
     ///
-    /// <para><b>This is where the settings dialog spends its time, and SuspendLayout does not fix it.</b>
-    /// Every add to a TableLayoutPanel with <see cref="SizeType.AutoSize"/> rows re-measures the whole
-    /// table, and the General tab costs ~1.9s to build for that reason. The obvious fix was tried and
-    /// MEASURED: batching the adds behind SuspendLayout/ResumeLayout made it 4.9s to open instead of 4.3s,
-    /// and suspending at the form level as well made it 11.5s. Deferring the measurement does not avoid it,
-    /// it just makes one resume pay for every nested AutoSize control at once.</para>
-    ///
-    /// <para>So the cost is inherent to nesting AutoSize TableLayoutPanel rows inside AutoSize content, and
-    /// removing it means not using TableLayoutPanel here — a real change, not a flag. Left as it is rather
-    /// than shipping a measured regression.</para>
+    /// <para>A <see cref="FormGrid"/> and deliberately NOT a TableLayoutPanel. The table was this dialog's
+    /// entire load time — see FormGrid's own remarks for the measurements, including the two obvious fixes
+    /// that made it worse.</para>
     /// </summary>
-    private static TableLayoutPanel NewGrid()
+    private FormGrid NewGrid()
     {
-        var layout = new TableLayoutPanel
+        var grid = new FormGrid
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 2,
             Padding = new Padding(20, 18, 20, 12),
             AutoScroll = false,
             BackColor = Theme.Surface,
+            FieldWidth = FieldWidth,
         };
 
-        // 200 rather than 160: "Character build URL" wrapped onto two lines at the old width, which
-        // knocked every following row out of vertical alignment.
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 200));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        _grids.Add(grid);
 
-        return layout;
+        return grid;
     }
 
-    private static void Row(TableLayoutPanel grid, string label, Control control)
+    private static void Row(FormGrid grid, string label, Control control)
     {
-        // Width is forced below for TextBox/ComboBox, which would otherwise stretch. An AutoSize
-        // label must keep its own measured width or it collapses to a single column of characters.
-        // An explicit AutoSize style PER ROW. Without one, rows past the end of the RowStyles
-        // collection do not size to their content, so a tall control (the wrapped hint labels, the
-        // checkboxes) overlapped whatever came after it at the bottom of the tab.
-        grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        grid.RowCount = grid.RowStyles.Count;
-
-        grid.Controls.Add(new Label
+        // The vertical margin the old TableLayoutPanel row applied, kept so the spacing is unchanged.
+        // Controls that carry their own margin (the hints, the refresh button) keep it.
+        if (control.Margin == new Padding(3))
         {
-            Text = label,
-            AutoSize = true,
-            Anchor = AnchorStyles.Left,
-            // Nudged down so the caption sits on the text baseline of the control beside it.
-            Padding = new Padding(0, 8, 0, 0),
-            BackColor = Color.Transparent,
-        });
-
-        if (control is TextBox or ComboBox)
-        {
-            control.Width = FieldWidth;
+            control.Margin = new Padding(0, 5, 0, 5);
         }
 
-        control.Margin = new Padding(0, 5, 0, 5);
-        grid.Controls.Add(control);
+        grid.AddRow(label, control);
     }
 
     private Panel BuildGeneralTab()
@@ -686,10 +722,18 @@ internal sealed class SettingsWindow : ThemedForm
 
         _loadingProvider = true;
 
+        // BeginUpdate around every combo fill, and it is worth far more than it looks. Each
+        // Items.Add on a combo box re-measures the dropdown, so the three fills in this method cost
+        // 1081ms between them — 9 language entries alone were 349ms. Batched they are 553ms, which took
+        // the whole window construction from 2278ms to 1821ms. Measured, not assumed.
+        _provider.BeginUpdate();
+
         foreach (var info in AiCatalog.All)
         {
             _provider.Items.Add(new ProviderChoice(info.Kind));
         }
+
+        _provider.EndUpdate();
 
         _provider.SelectedItem = _provider.Items.Cast<ProviderChoice>()
             .FirstOrDefault(c => c.Kind == settings.Ai.Provider);
@@ -702,13 +746,20 @@ internal sealed class SettingsWindow : ThemedForm
         OnProviderChanged();
 
         // Each language listed in its own script, so someone who needs it can find it.
+        _language.BeginUpdate();
+
         foreach (var language in Enum.GetValues<AppLanguage>())
         {
             _language.Items.Add(new LanguageChoice(language));
         }
 
+        _language.EndUpdate();
+
         _language.SelectedItem = _language.Items.Cast<LanguageChoice>()
             .FirstOrDefault(c => c.Language == settings.Language);
+
+
+        _process.BeginUpdate();
 
         foreach (var window in GameWindowLocator.ListVisibleWindows())
         {
@@ -717,6 +768,8 @@ internal sealed class SettingsWindow : ThemedForm
                 _process.Items.Add(window.ProcessName);
             }
         }
+
+        _process.EndUpdate();
 
         // Set Text AFTER populating: adding items to a ComboBox resets Text, so assigning it first
         // silently blanked the stored process name and the field came up empty despite TL being saved.
