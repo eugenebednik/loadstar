@@ -93,16 +93,51 @@ public sealed class KnowledgeTrimTests
     }
 
     /// <summary>
-    /// A tripwire on the whole pack. It is cached so it is cheap per turn, but attention is not cached —
-    /// if this fires, the answer is to move reference DATA behind a per-turn lookup, not to raise the
-    /// number.
+    /// Tripwires on what ACTUALLY reaches the model, which is not the same as the whole pack.
+    ///
+    /// <para>The earlier version of this capped <c>TlKnowledgePack.EstimatedTokens</c> — the untrimmed
+    /// pack — which is never sent at all when a build is pinned, because the class profiles are trimmed
+    /// to one. So it was measuring a number no request pays for, and it was about to fail on knowledge
+    /// that costs the real path nothing.</para>
+    ///
+    /// <para>These are cost AND attention limits. The pack is cached so it is cheap per turn after the
+    /// first, but attention is not cached: past some size the model gets worse at the specific rules
+    /// that matter. If one of these fires, the answer is to move reference DATA behind a per-turn lookup
+    /// — the way item and drop data already work — rather than to raise the number.</para>
     /// </summary>
     [Fact]
-    public void ThePackStaysWithinItsAttentionBudget()
+    public void WhatActuallyShipsStaysWithinBudget()
     {
-        Assert.True(
-            TlKnowledgePack.EstimatedTokens < 16_000,
-            $"the knowledge pack is ~{TlKnowledgePack.EstimatedTokens} tokens; move reference data to a "
-            + "per-turn lookup rather than raising this");
+        // The normal path: a pinned build, so exactly one class profile travels.
+        var shipped = TlKnowledgePack.ForClass("Seeker").Length / 4;
+
+        Assert.True(shipped < 14_000, $"the trimmed pack is ~{shipped} tokens; move reference data to a lookup");
+
+        // The fallback path, when no class is known and all 45 profiles travel. Looser on purpose, but
+        // still bounded — it is the case that grows fastest as classes are added.
+        var whole = TlKnowledgePack.EstimatedTokens;
+
+        Assert.True(whole < 17_000, $"the untrimmed pack is ~{whole} tokens");
+        Assert.True(whole > shipped, "trimming saved nothing, so the class filter has stopped working");
+    }
+
+    /// <summary>
+    /// The assembled prompt, both ways round. The no-build case is the tight one: it carries every class
+    /// profile AND the candidate builds, so it is the first to hit the ceiling even though it is the
+    /// case with the least information in it.
+    /// </summary>
+    [Fact]
+    public void TheAssembledPromptStaysWithinBudget()
+    {
+        var seeker = new TargetBuild
+        {
+            Id = "x", Name = "Seeker", Source = "questlog", WeaponTypes = ["bow", "wand"],
+        };
+
+        var withBuild = TlSystemPrompt.Build(seeker, ["pve"]).Length / 4;
+        var without = TlSystemPrompt.Build(null, []).Length / 4;
+
+        Assert.True(withBuild < 23_000, $"prompt with a build is ~{withBuild} tokens");
+        Assert.True(without < 25_000, $"prompt with no build is ~{without} tokens — the tighter of the two");
     }
 }

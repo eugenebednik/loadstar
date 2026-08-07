@@ -116,4 +116,60 @@ public sealed class AdviceCorrectionTests
     {
         Assert.Contains(fragment, TlKnowledgePack.Text, StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// The two research findings that change what advice is even POSSIBLE for a given player, rather
+    /// than merely informing it. Both are about availability, and getting them wrong produces advice the
+    /// player cannot act on at all.
+    /// </summary>
+    [Theory]
+    // Guild level is the whole guild's accumulated daily activity, so a solo player cannot fix it.
+    [InlineData("a player cannot fix this themselves")]
+    // Two guilds per boonstone war, guilds only.
+    [InlineData("it is scenery")]
+    // And a boonstone buff inflates the character sheet without labelling itself.
+    [InlineData("INFLATES THE CHARACTER SHEET")]
+    // Dimensional Trials use tiers; stars belong to the older co-op dungeons.
+    [InlineData("TIERS, not stars")]
+    // The arena normalises gear, so gear advice is the wrong answer there.
+    [InlineData("Equalized")]
+    public void AvailabilityFindingsReachTheKnowledgePack(string fragment)
+    {
+        Assert.Contains(fragment, TlKnowledgePack.Text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Material sources, so a cost can be named with somewhere to get it. "You need three Growthstones"
+    /// is not actionable until the player knows what to run.
+    /// </summary>
+    [Theory]
+    [InlineData("Quality → Rare → Precious → Epic", "the Growthstone rarity ladder")]
+    [InlineData("SENIOR crafter", "Epic stones need a senior crafter, not any city")]
+    [InlineData("Morphstones and Growthstones", "the Codex is a materials source, not just story")]
+    [InlineData("Rune Chance Chest", "Dimensional Trials are where rune volume comes from")]
+    public void MaterialSourcesReachTheKnowledgePack(string fragment, string why)
+    {
+        // Whitespace-normalised, because these documents are hard-wrapped prose and a phrase can land
+        // across a line break — "Rune Chance Chest" did. A fragment test that depends on where a line
+        // happens to wrap fails for a reason that has nothing to do with the fact being present.
+        Assert.True(Flattened.Contains(Flatten(fragment), StringComparison.OrdinalIgnoreCase), why);
+    }
+
+    /// <summary>The pack with every run of whitespace collapsed to one space, for fragment matching.</summary>
+    private static readonly string Flattened = Flatten(TlKnowledgePack.Text);
+
+    private static string Flatten(string text) =>
+        System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " ");
+
+    /// <summary>
+    /// Every gap file must keep saying what it does NOT know. The pack's value depends on a reader being
+    /// able to tell a measurement from an absence, and an unmarked gap reads as completeness.
+    /// </summary>
+    [Fact]
+    public void ThePackKeepsDeclaringItsOwnGaps()
+    {
+        Assert.Contains("Still not captured", TlKnowledgePack.Text, StringComparison.Ordinal);
+        Assert.Contains("Searched and NOT found", TlKnowledgePack.Text, StringComparison.Ordinal);
+        Assert.Contains("is not published", TlKnowledgePack.Text, StringComparison.Ordinal);
+    }
 }
