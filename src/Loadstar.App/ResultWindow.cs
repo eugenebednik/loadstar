@@ -21,6 +21,16 @@ internal sealed class ResultWindow : ThemedForm
         ClientSize = new Size(860, 680);
         MinimumSize = new Size(560, 400);
 
+        // Opened BEHIND the game without this, which made the app look like it had silently failed:
+        // the player asks a question, waits, and nothing appears.
+        //
+        // Activate() alone does not fix it. Windows refuses SetForegroundWindow to a process that does
+        // not already own the foreground, and it fails silently rather than returning an error — so a
+        // fullscreen game keeps the front and the dialog sits behind it. TopMost does not go through
+        // that check. AskWindow has always set it, which is exactly why the ask dialog appeared
+        // correctly and the answer did not.
+        TopMost = true;
+
         var rendered = Render(advice, plan, question);
 
         var body = new TextBox

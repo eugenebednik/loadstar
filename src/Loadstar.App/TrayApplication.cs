@@ -46,6 +46,32 @@ internal sealed class TrayApplication : IDisposable
     private bool _busy;
 
     /// <summary>
+    /// The answer window while it is open, so the hotkey can say something useful instead of nothing.
+    ///
+    /// <para>Pressing the hotkey with this up used to do exactly nothing — silently, because the guard
+    /// was a bare <c>if (_busy) return;</c>. The player has no way to tell that from a broken hotkey.</para>
+    /// </summary>
+    private ResultWindow? _openResult;
+
+    /// <summary>
+    /// The question window while it is open. Separate from <see cref="_openResult"/> because the right
+    /// thing to say differs: this one already HAS a Retake button, so the answer is to point at it rather
+    /// than to queue anything.
+    /// </summary>
+    private AskWindow? _openAsk;
+
+    /// <summary>
+    /// Set when the hotkey fires while the answer window is open: the capture is owed, and runs once the
+    /// window closes.
+    ///
+    /// <para>It cannot run immediately for the same reason the retake loop exists — the answer window is
+    /// ON SCREEN and the capture is a region grab of the game's bounds, so it would photograph our own
+    /// window. Hence the countdown afterwards rather than an instant shot: the player still needs a moment
+    /// to bring the game forward, and the countdown is cancellable if the press was an accident.</para>
+    /// </summary>
+    private bool _captureQueued;
+
+    /// <summary>
     /// The games this build can advise on. One today; the player will choose here once there are
     /// several. Registered rather than discovered so what ships is readable in one place.
     /// </summary>
@@ -284,6 +310,30 @@ internal sealed class TrayApplication : IDisposable
     {
         if (_busy)
         {
+            if (_openResult is { } answer)
+            {
+                _captureQueued = true;
+
+                // Focused as well as announced. The balloon says to close a window, so that window had
+                // better be the one in front. It is already TopMost from its constructor, which is what
+                // gets it above the game; this is what puts the keyboard in it.
+                answer.Activate();
+
+                ShowBalloon(Strings.Get("busy.answer.title"), Strings.Get("busy.answer"));
+            }
+            else if (_openAsk is { } asking)
+            {
+                asking.Activate();
+
+                ShowBalloon(Strings.Get("busy.asking.title"), Strings.Get("busy.asking"));
+            }
+            else
+            {
+                // Mid-request. Telling them to close something would be wrong advice: nothing is in the
+                // way, the answer simply has not arrived.
+                ShowBalloon(Strings.Get("busy.working.title"), Strings.Get("busy.working"));
+            }
+
             return;
         }
 
@@ -291,85 +341,160 @@ internal sealed class TrayApplication : IDisposable
 
         try
         {
-            var settings = _store.Load();
-
-            if (!settings.CaptureConsentGiven)
-            {
-                if (!ConsentPrompt.Ask(null))
-                {
-                    ShowBalloon("Capture stays off", "Nothing was read and nothing was sent.");
-                    return;
-                }
-
-                settings = settings with
-                {
-                    CaptureConsentGiven = true,
-                    ConsentVersionAccepted = ConsentPrompt.CurrentVersion,
-                };
-
-                _store.Save(settings);
-            }
-
-            // NO BUILD GATE HERE ANY MORE, deliberately. This used to refuse the capture outright
-            // when no questlog URL was configured, on the reasoning that advice is measured against a
-            // target and without one there is nothing to compare to.
-            //
-            // That reasoning was wrong about its own product. Most of what makes the advice good is
-            // visible on the screen and needs no target at all: empty artifact slots, unfilled rune
-            // sockets, a set one piece from a threshold, a negative boss stat, and a stat
-            // redistribution that costs nothing. The gate withheld all of it behind a chore, and the
-            // player most likely to hit it is the one who has not yet found a build to copy — exactly
-            // the player with the most to gain.
-            //
-            // What genuinely needs a build is the PvE/PvP axis, and the prompt now handles its absence
-            // by asking rather than assuming. See DescribeNoTarget in TlSystemPrompt.
-            // RETAKE LOOP. The capture has to happen with no Loadstar window in the way, so a retake
-            // cannot be done from inside the dialog — the dialog closes, the player is given a moment to
-            // bring the game forward and open the right screen, and the capture runs again.
-            //
-            // Worth the loop because the hotkey fires on whatever happens to be on screen, and a capture
-            // of the open world answers almost nothing. Before this, that cost the player the entire
-            // interaction: cancel, navigate, find the hotkey, retype the question.
-            CapturedFrame frame;
-            string question;
-            string? carried = null;
-
+            // OUTER LOOP: one pass per question. A second pass happens only when the hotkey was pressed while
+            // the answer window was open, which is the player asking for a fresh capture and a fresh question.
             while (true)
             {
-                var result = await _gated.CaptureAsync(
-                    new CaptureRequest
-                    {
-                        Target = settings.Capture.ToWindowTarget(Game.DefaultProcessName, Game.DefaultWindowTitleMatch),
-                        Region = Game.FullWindow,
-                        PrivacyMasks = Game.PrivacyMasks,
-                        Label = "game window",
-                        Timeout = TimeSpan.FromSeconds(8),
-                    },
-                    CancellationToken.None);
+                var settings = _store.Load();
 
-                if (!result.Success)
+                if (!settings.CaptureConsentGiven)
                 {
-                    ShowBalloon($"Capture {result.Status}", result.Detail ?? "Unknown failure.", ToolTipIcon.Warning);
-                    return;
+                    if (!ConsentPrompt.Ask(null))
+                    {
+                        ShowBalloon("Capture stays off", "Nothing was read and nothing was sent.");
+                        return;
+                    }
+
+                    settings = settings with
+                    {
+                        CaptureConsentGiven = true,
+                        ConsentVersionAccepted = ConsentPrompt.CurrentVersion,
+                    };
+
+                    _store.Save(settings);
                 }
 
-                var candidate = result.Frame;
+                // NO BUILD GATE HERE ANY MORE, deliberately. This used to refuse the capture outright
+                // when no questlog URL was configured, on the reasoning that advice is measured against a
+                // target and without one there is nothing to compare to.
+                //
+                // That reasoning was wrong about its own product. Most of what makes the advice good is
+                // visible on the screen and needs no target at all: empty artifact slots, unfilled rune
+                // sockets, a set one piece from a threshold, a negative boss stat, and a stat
+                // redistribution that costs nothing. The gate withheld all of it behind a chore, and the
+                // player most likely to hit it is the one who has not yet found a build to copy — exactly
+                // the player with the most to gain.
+                //
+                // What genuinely needs a build is the PvE/PvP axis, and the prompt now handles its absence
+                // by asking rather than assuming. See DescribeNoTarget in TlSystemPrompt.
+                // RETAKE LOOP. The capture has to happen with no Loadstar window in the way, so a retake
+                // cannot be done from inside the dialog — the dialog closes, the player is given a moment to
+                // bring the game forward and open the right screen, and the capture runs again.
+                //
+                // Worth the loop because the hotkey fires on whatever happens to be on screen, and a capture
+                // of the open world answers almost nothing. Before this, that cost the player the entire
+                // interaction: cancel, navigate, find the hotkey, retype the question.
+                CapturedFrame frame;
+                string question;
+                string? carried = null;
 
-                using var stream = new MemoryStream(candidate.Png);
-                using var preview = Image.FromStream(stream);
-
-                using var ask = new AskWindow(
-                    (Image)preview.Clone(), candidate.WindowTitle, _recentQuestions, carried);
-
-                var choice = ask.ShowDialog();
-
-                if (choice == DialogResult.Retry)
+                while (true)
                 {
-                    // Carry the typed question across, so fixing the screenshot does not cost the words.
-                    carried = ask.Question;
+                    var result = await _gated.CaptureAsync(
+                        new CaptureRequest
+                        {
+                            Target = settings.Capture.ToWindowTarget(Game.DefaultProcessName, Game.DefaultWindowTitleMatch),
+                            Region = Game.FullWindow,
+                            PrivacyMasks = Game.PrivacyMasks,
+                            Label = "game window",
+                            Timeout = TimeSpan.FromSeconds(8),
+                        },
+                        CancellationToken.None);
 
-                    // Cancelling the countdown abandons the whole interaction rather than firing a
-                    // capture nobody is ready for.
+                    if (!result.Success)
+                    {
+                        ShowBalloon($"Capture {result.Status}", result.Detail ?? "Unknown failure.", ToolTipIcon.Warning);
+                        return;
+                    }
+
+                    var candidate = result.Frame;
+
+                    using var stream = new MemoryStream(candidate.Png);
+                    using var preview = Image.FromStream(stream);
+
+                    using var ask = new AskWindow(
+                        (Image)preview.Clone(), candidate.WindowTitle, _recentQuestions, carried);
+
+                    _openAsk = ask;
+
+                    DialogResult choice;
+
+                    try
+                    {
+                        choice = ask.ShowDialog();
+                    }
+                    finally
+                    {
+                        _openAsk = null;
+                    }
+
+                    if (choice == DialogResult.Retry)
+                    {
+                        // Carry the typed question across, so fixing the screenshot does not cost the words.
+                        carried = ask.Question;
+
+                        // Cancelling the countdown abandons the whole interaction rather than firing a
+                        // capture nobody is ready for.
+                        if (!WaitForRetake(whatToOpen: null))
+                        {
+                            return;
+                        }
+
+                        continue;
+                    }
+
+                    if (choice != DialogResult.OK)
+                    {
+                        return;
+                    }
+
+                    frame = candidate;
+                    question = ask.Question;
+                    break;
+                }
+
+                if (!string.IsNullOrWhiteSpace(question))
+                {
+                    _recentQuestions.Remove(question);
+                    _recentQuestions.Insert(0, question);
+                }
+
+                // A retake from the RESULT window re-enters the whole flow: capture, ask, analyse. The
+                // question is kept, so taking the advice to open a different screen costs one click.
+                while (await AnalyseAsync(frame, question, settings))
+                {
+                    if (!WaitForRetake(whatToOpen: null))
+                    {
+                        return;
+                    }
+
+                    var again = await _gated.CaptureAsync(
+                        new CaptureRequest
+                        {
+                            Target = settings.Capture.ToWindowTarget(Game.DefaultProcessName, Game.DefaultWindowTitleMatch),
+                            Region = Game.FullWindow,
+                            PrivacyMasks = Game.PrivacyMasks,
+                            Label = "game window",
+                            Timeout = TimeSpan.FromSeconds(8),
+                        },
+                        CancellationToken.None);
+
+                    if (!again.Success)
+                    {
+                        ShowBalloon($"Capture {again.Status}", again.Detail ?? "Unknown failure.", ToolTipIcon.Warning);
+                        return;
+                    }
+
+                    frame = again.Frame;
+                }
+
+                // A hotkey press landed while the answer was open. Restart from the capture rather than
+                // reusing the question: the retake loop above exists for "same question, better screenshot",
+                // and reaching for the hotkey means the player wants to ask something else.
+                if (_captureQueued)
+                {
+                    _captureQueued = false;
+
                     if (!WaitForRetake(whatToOpen: null))
                     {
                         return;
@@ -378,49 +503,7 @@ internal sealed class TrayApplication : IDisposable
                     continue;
                 }
 
-                if (choice != DialogResult.OK)
-                {
-                    return;
-                }
-
-                frame = candidate;
-                question = ask.Question;
-                break;
-            }
-
-            if (!string.IsNullOrWhiteSpace(question))
-            {
-                _recentQuestions.Remove(question);
-                _recentQuestions.Insert(0, question);
-            }
-
-            // A retake from the RESULT window re-enters the whole flow: capture, ask, analyse. The
-            // question is kept, so taking the advice to open a different screen costs one click.
-            while (await AnalyseAsync(frame, question, settings))
-            {
-                if (!WaitForRetake(whatToOpen: null))
-                {
-                    return;
-                }
-
-                var again = await _gated.CaptureAsync(
-                    new CaptureRequest
-                    {
-                        Target = settings.Capture.ToWindowTarget(Game.DefaultProcessName, Game.DefaultWindowTitleMatch),
-                        Region = Game.FullWindow,
-                        PrivacyMasks = Game.PrivacyMasks,
-                        Label = "game window",
-                        Timeout = TimeSpan.FromSeconds(8),
-                    },
-                    CancellationToken.None);
-
-                if (!again.Success)
-                {
-                    ShowBalloon($"Capture {again.Status}", again.Detail ?? "Unknown failure.", ToolTipIcon.Warning);
-                    return;
-                }
-
-                frame = again.Frame;
+                return;
             }
         }
         catch (Exception ex)
@@ -430,6 +513,10 @@ internal sealed class TrayApplication : IDisposable
         finally
         {
             _busy = false;
+
+            // Dropped rather than honoured if the flow ended some other way — an error, a cancelled
+            // countdown. A capture nobody is expecting is worse than one that did not happen.
+            _captureQueued = false;
         }
     }
 
@@ -585,10 +672,22 @@ internal sealed class TrayApplication : IDisposable
 
         using var window = new ResultWindow(advice, plan, question);
 
-        // Retry means the player took the "open that screen and try again" advice. Reported up so the
-        // capture loop can run once more with the question already typed, instead of making them start
-        // from the hotkey.
-        return window.ShowDialog() == DialogResult.Retry;
+        // Visible to the hotkey handler for exactly as long as it is on screen. Cleared in a finally so a
+        // throw from the dialog cannot leave a stale reference behind — the next hotkey press would then
+        // tell the player to close a window that is not there.
+        _openResult = window;
+
+        try
+        {
+            // Retry means the player took the "open that screen and try again" advice. Reported up so the
+            // capture loop can run once more with the question already typed, instead of making them start
+            // from the hotkey.
+            return window.ShowDialog() == DialogResult.Retry;
+        }
+        finally
+        {
+            _openResult = null;
+        }
     }
 
     private static string BuildUserPrompt(string question, IReadOnlyDictionary<TlStat, int> allocated)
