@@ -26,3 +26,10 @@ captures/
 # Rebuilding it is one command and about two minutes:
 #   python tools/class-profiles/build-class-profiles.py
 tools/class-profiles/harvest-cache.json
+
+# On-disk caches, if one is ever pointed at the repo instead of the app data directory.
+#
+# The equipment catalogue is one of these and it is 10.5 MB. Unlike the harvest cache above it holds no
+# player data — it is static per-patch item data — but ten megabytes of another site's payload has no
+# business in git history either, and the last cache that got committed had to be scrubbed out of it.
+*.cache.json

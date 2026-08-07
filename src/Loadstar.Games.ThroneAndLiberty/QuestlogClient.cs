@@ -306,6 +306,79 @@ public sealed partial class QuestlogClient
         };
     }
 
+    /// <summary>
+    /// The full equipment catalogue — 1,773 items with names, item levels, set membership and rarity.
+    ///
+    /// <para><b>Cached on disk and effectively forever.</b> It is 10.4 MB and static per patch, so
+    /// re-fetching it would add ten megabytes of someone else's bandwidth to a startup that gains
+    /// nothing from it. The cache is keyed by nothing but its own age: a patch changes the contents, and
+    /// a month is short enough to catch that while long enough that most launches never ask.</para>
+    ///
+    /// <para><b>Why bother at all.</b> Without it, item ids are opaque — the prompt has to tell the model
+    /// "these are catalogue keys, do not translate them into names you are not sure of", so a target build
+    /// reads as thirty lines of <c>belt_aa_t3_normal_004</c>. With it, all thirty of the reference build's
+    /// slots resolve to real names and item level ranges, and the hedge can go.</para>
+    ///
+    /// <para>Returns null rather than throwing when it cannot be had. Advice without item names is worse
+    /// than advice with them and far better than none.</para>
+    /// </summary>
+    public async Task<EquipmentCatalog?> GetEquipmentCatalogAsync(
+        string cacheDirectory,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(cacheDirectory);
+
+        var path = Path.Combine(cacheDirectory, "equipment-catalog.cache.json");
+
+        try
+        {
+            if (File.Exists(path) && DateTime.UtcNow - File.GetLastWriteTimeUtc(path) < CatalogLifetime)
+            {
+                return EquipmentCatalog.Parse(await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false));
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException
+            or InvalidOperationException or ArgumentException)
+        {
+            // A corrupt cache is not worth failing over; fall through and refetch. A zero-byte file counts:
+            // Parse rejects blank input with ArgumentException, and an interrupted write leaves exactly that.
+            Loadstar.Core.Diagnostics.Log.Warn($"Equipment catalogue: cache unreadable ({ex.GetType().Name}), refetching.");
+        }
+
+        try
+        {
+            var input = JsonSerializer.Serialize(new { language = "en" });
+            var url = $"{Base}characterBuilder.getEquipmentItems?input={Uri.EscapeDataString(input)}";
+
+            var json = await _http.GetStringAsync(url, cancellationToken).ConfigureAwait(false);
+            var catalog = EquipmentCatalog.Parse(json);
+
+            // Only cached after it parses, so the cache can never hold something Parse would reject.
+            Directory.CreateDirectory(cacheDirectory);
+            await File.WriteAllTextAsync(path, json, cancellationToken).ConfigureAwait(false);
+
+            Loadstar.Core.Diagnostics.Log.Info(
+                $"Equipment catalogue: fetched {catalog.Count} items, cached for {CatalogLifetime.TotalDays:0} days.");
+
+            return catalog;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException
+            or IOException or UnauthorizedAccessException or JsonException
+            or InvalidOperationException or ArgumentException)
+        {
+            // InvalidOperationException is in this list on purpose: it is what Parse throws when
+            // result.data is absent, which is how an outage page or an unannounced shape change from an
+            // undocumented, unversioned API arrives. Unresolved ids are a degraded prompt; an exception
+            // here would be no advice at all.
+            Loadstar.Core.Diagnostics.Log.Warn(
+                $"Equipment catalogue: unavailable ({ex.GetType().Name}). Item ids will stay unresolved.");
+            return null;
+        }
+    }
+
+    /// <summary>Static per patch, so a month catches a release without asking on every launch.</summary>
+    private static readonly TimeSpan CatalogLifetime = TimeSpan.FromDays(30);
+
     [GeneratedRegex("^[A-Za-z0-9_-]{4,64}$")]
     private static partial Regex SlugPattern();
 }

@@ -33,7 +33,8 @@ public static class TlSystemPrompt
         IReadOnlyList<string> characterTags,
         string? replyLanguage = null,
         DerivedTargets? derived = null,
-        IReadOnlyList<BuildCandidate>? candidates = null)
+        IReadOnlyList<BuildCandidate>? candidates = null,
+        EquipmentCatalog? catalog = null)
     {
         ArgumentNullException.ThrowIfNull(characterTags);
 
@@ -75,7 +76,7 @@ public static class TlSystemPrompt
 
         builder.AppendLine(target is null
             ? DescribeNoTarget(candidates)
-            : DescribeTarget(target, characterTags));
+            : DescribeTarget(target, characterTags, catalog));
 
         builder.AppendLine();
 
@@ -635,7 +636,10 @@ public static class TlSystemPrompt
         return builder.ToString().TrimEnd();
     }
 
-    private static string DescribeTarget(TargetBuild target, IReadOnlyList<string> characterTags)
+    private static string DescribeTarget(
+        TargetBuild target,
+        IReadOnlyList<string> characterTags,
+        EquipmentCatalog? catalog = null)
     {
         var builder = new StringBuilder();
 
@@ -755,14 +759,22 @@ public static class TlSystemPrompt
 
         if (target.Equipment.Count > 0)
         {
+            // Empty ids are real: castle, boonstone and riftstone come back as "" on a build that has
+            // not filled them, and listing them as unknown items invites advice about nothing.
+            var filled = target.Equipment
+                .Where(e => !string.IsNullOrWhiteSpace(e.Value.ItemId))
+                .OrderBy(e => e.Key, StringComparer.Ordinal)
+                .ToArray();
+
             builder.AppendLine();
             builder.Append("Target equipment covers ")
-                .Append(target.Equipment.Count)
+                .Append(filled.Length)
                 .AppendLine(" slots:");
 
-            foreach (var (slot, item) in target.Equipment.OrderBy(e => e.Key, StringComparer.Ordinal))
+            foreach (var (slot, item) in filled)
             {
-                builder.Append("- ").Append(slot).Append(": ").Append(item.ItemId);
+                builder.Append("- ").Append(slot).Append(": ").Append(item.ItemId)
+                    .Append(TlReferenceLookup.Describe(item.ItemId, catalog));
 
                 if (item.Runes.Count > 0)
                 {
@@ -781,9 +793,20 @@ public static class TlSystemPrompt
 
             builder.AppendLine();
             builder.AppendLine(
-                "Item ids are opaque catalogue keys. Do not translate them into display names you " +
-                "are not certain of, and do not claim the player is holding an item because it " +
-                "appears here — this is the destination, not their inventory.");
+                "**Where a line gives a name after the id, USE THE NAME** — the player cannot recognise " +
+                "`belt_aa_t3_normal_004`, and the name is resolved from the catalogue rather than guessed. " +
+                "Where a line gives no name, the catalogue does not have that id: repeat the id as-is and " +
+                "say it is unidentified. NEVER invent a name for an unresolved id.");
+            builder.AppendLine();
+            builder.AppendLine(
+                "The item levels in brackets are THE ITEM'S OWN RANGE — the floor it drops at and the " +
+                "ceiling it can be upgraded to. They are NOT this build's target level and NOT the " +
+                "player's current level. The ceiling is what makes tier comparisons answerable: a weapon " +
+                "that stops at 50 cannot be raised past it no matter how much is spent on it.");
+            builder.AppendLine();
+            builder.AppendLine(
+                "Do not claim the player is HOLDING any of this: it is the destination, not their inventory.");
+
 
             builder.AppendLine();
             builder.AppendLine(

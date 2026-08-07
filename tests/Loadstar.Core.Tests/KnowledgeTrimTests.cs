@@ -122,22 +122,72 @@ public sealed class KnowledgeTrimTests
     }
 
     /// <summary>
-    /// The assembled prompt, both ways round. The no-build case is the tight one: it carries every class
-    /// profile AND the candidate builds, so it is the first to hit the ceiling even though it is the
-    /// case with the least information in it.
+    /// The assembled prompt, in the three shapes that actually ship.
+    ///
+    /// <para><b>The equipped case is the one that counts, and it used to be missing.</b> This test measured
+    /// a <see cref="TargetBuild"/> with an empty <c>Equipment</c> dictionary, which no real pinned build
+    /// has — so it was asserting on a prompt ~1,700 tokens smaller than the one that gets sent. Measured
+    /// against the live reference build (questlog 8344612, 30 filled slots) the real figure is ~23,400,
+    /// because each slot carries three runes and three traits. The old 23,000 bound was never tested
+    /// against that and a real build would have sailed past it unnoticed.</para>
+    ///
+    /// <para>The no-build case stays the other tight one: it carries every class profile AND the candidate
+    /// builds, so it is dense even though it has the least information in it.</para>
     /// </summary>
     [Fact]
     public void TheAssembledPromptStaysWithinBudget()
     {
-        var seeker = new TargetBuild
+        var bare = new TargetBuild
         {
             Id = "x", Name = "Seeker", Source = "questlog", WeaponTypes = ["bow", "wand"],
         };
 
-        var withBuild = TlSystemPrompt.Build(seeker, ["pve"]).Length / 4;
+        var equipped = bare with { Equipment = ReferenceEquipment() };
+
+        var withBuild = TlSystemPrompt.Build(bare, ["pve"]).Length / 4;
+        var withGear = TlSystemPrompt.Build(equipped, ["pve"]).Length / 4;
         var without = TlSystemPrompt.Build(null, []).Length / 4;
 
-        Assert.True(withBuild < 23_000, $"prompt with a build is ~{withBuild} tokens");
-        Assert.True(without < 25_000, $"prompt with no build is ~{without} tokens — the tighter of the two");
+        Assert.True(withBuild < 23_000, $"prompt with a bare build is ~{withBuild} tokens");
+        Assert.True(without < 25_000, $"prompt with no build is ~{without} tokens");
+        Assert.True(
+            withGear < 25_000,
+            $"prompt with a fully equipped build is ~{withGear} tokens — the real shipping case");
+        Assert.True(withGear > withBuild, "equipment added nothing, so the equipment section has broken");
+    }
+
+    /// <summary>
+    /// Thirty slots at the density a real questlog build has: three runes and three traits each. The names
+    /// are shaped like the real ones rather than copied, because this measures SIZE — what matters is the
+    /// slot count and the per-slot payload, not which item is in it.
+    /// </summary>
+    private static Dictionary<string, TargetItem> ReferenceEquipment()
+    {
+        string[] slots =
+        [
+            "attack", "belt", "boonstone", "bracelet", "brooch", "castle", "chest", "cloak", "defense",
+            "earring", "feet", "gemstone1", "gemstone2", "hands", "head", "hp-recovery", "legs",
+            "main_hand", "mana-recovery", "necklace", "off_hand", "riftstone", "ring_1", "ring_2",
+            "stellarite", "talistone1", "talistone2", "talistone3", "talistone4", "utility",
+        ];
+
+        return slots.ToDictionary(
+            slot => slot,
+            slot => new TargetItem
+            {
+                ItemId = $"{slot}_aa_t3_normal_004",
+                Runes =
+                [
+                    new TargetRune { RuneId = "r1", StatId = "skill_power_resistance", Level = 120 },
+                    new TargetRune { RuneId = "r2", StatId = "magic_double_defense", Level = 1 },
+                    new TargetRune { RuneId = "r3", StatId = "magic_double_defense", Level = 120 },
+                ],
+                Traits = new Dictionary<string, int>
+                {
+                    ["hp_max"] = 600,
+                    ["skill_power_resistance"] = 800,
+                    ["debuff_taken_duration_modifier"] = -600,
+                },
+            });
     }
 }

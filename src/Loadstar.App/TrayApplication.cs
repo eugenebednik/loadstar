@@ -33,6 +33,12 @@ internal sealed class TrayApplication : IDisposable
     /// for no benefit. Null means the fetch has not succeeded yet — a later capture retries.</para>
     /// </summary>
     private TraitReference? _traitReference;
+
+    /// <summary>
+    /// The equipment catalogue, fetched once and kept. Same reasoning as the trait reference above: 10.4MB
+    /// of per-patch data that would add nothing to re-read on every capture.
+    /// </summary>
+    private EquipmentCatalog? _catalog;
     private readonly GameLaunchWatcher _launchWatcher;
     private readonly BossTimerService _bossTimer;
 
@@ -491,6 +497,10 @@ internal sealed class TrayApplication : IDisposable
 
         var derived = target is null ? null : await ComputeTargetsAsync(target, http);
 
+        // Cached on disk for a month, so this is a file read on all but the first launch after a patch.
+        // Only worth fetching when there is a build whose items it would resolve.
+        var catalog = target is null ? null : await LoadCatalogAsync(http);
+
         // Candidates for the class the player is playing, so the model can offer a target instead of
         // demanding one. Only worth fetching when nothing is pinned, and never worth failing over:
         // no candidates means the offer is skipped, not that the answer is lost.
@@ -521,7 +531,8 @@ internal sealed class TrayApplication : IDisposable
                     characterTags,
                     AppLanguages.EnglishName(settings.Language),
                     derived,
-                    candidates),
+                    candidates,
+                    catalog),
                 UserPrompt = BuildUserPrompt(question, allocated),
                 Images = [new CapturedImage { Png = frame.Png, Label = frame.Label }],
                 // 3000 was too tight and it failed in the field. Reasoning tokens are billed and
@@ -731,6 +742,36 @@ internal sealed class TrayApplication : IDisposable
                 WeaponsConfirmed = confirmed,
             },
         });
+    }
+
+    /// <summary>
+    /// The equipment catalogue, so the build's item ids become names.
+    ///
+    /// <para>Held for the process lifetime once loaded. It is 10.4MB of static per-patch data, and the
+    /// alternative to resolving it is a prompt that shows the player thirteen lines of
+    /// <c>belt_aa_S1_003</c> and a model instructed not to guess what they mean.</para>
+    ///
+    /// <para>Never blocks advice: a failure returns null and the ids stay unresolved, which is exactly
+    /// the behaviour that existed before this.</para>
+    /// </summary>
+    private async Task<EquipmentCatalog?> LoadCatalogAsync(HttpClient http)
+    {
+        try
+        {
+            _catalog ??= await new QuestlogClient(http)
+                .GetEquipmentCatalogAsync(_store.Directory, CancellationToken.None);
+
+            return _catalog;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException
+            or InvalidOperationException or ArgumentException)
+        {
+            // Belt and braces: GetEquipmentCatalogAsync already swallows these, but it is the one call in
+            // the advice path whose failure must never surface, and a catch list is cheaper than trusting
+            // that a method two projects away keeps its contract.
+            Loadstar.Core.Diagnostics.Log.Warn($"Equipment catalogue not loaded: {ex.GetType().Name}.");
+            return null;
+        }
     }
 
     private async Task<DerivedTargets?> ComputeTargetsAsync(TargetBuild target, HttpClient http)
