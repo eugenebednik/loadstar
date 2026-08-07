@@ -133,6 +133,21 @@ internal sealed class TrayApplication : IDisposable
         }
     }
 
+    /// <summary>
+    /// Shows the retake countdown and reports whether the player let it run.
+    ///
+    /// <para>Modal so the flow genuinely waits, but the window never takes focus — the player is about
+    /// to alt-tab into the game, and stealing focus at that exact moment would fight them.</para>
+    /// </summary>
+    /// <param name="whatToOpen">The screen to name in the prompt, or null for a generic one.</param>
+    /// <returns>False if the player cancelled, in which case nothing should be captured.</returns>
+    private static bool WaitForRetake(string? whatToOpen)
+    {
+        using var countdown = new RetakeCountdown(whatToOpen);
+
+        return countdown.ShowDialog() == DialogResult.OK;
+    }
+
     private void OnGameLaunched(string processName)
     {
         var settings = _store.Load();
@@ -153,11 +168,14 @@ internal sealed class TrayApplication : IDisposable
     {
         var menu = new ContextMenuStrip();
 
-        var capture = new ToolStripMenuItem("Capture and ask…");
+        // menu.capture, menu.countdown, menu.settings and menu.exit were translated into all nine
+        // languages and the menu asked for none of them, so the tray stayed English whatever the
+        // player picked. Same omission the ask dialog had.
+        var capture = new ToolStripMenuItem(Strings.Get("menu.capture"));
         capture.Click += async (_, _) => await CaptureAndAskAsync();
         capture.Font = new Font(menu.Font, FontStyle.Bold);
 
-        var countdown = new ToolStripMenuItem("Show boss countdown") { CheckOnClick = true };
+        var countdown = new ToolStripMenuItem(Strings.Get("menu.countdown")) { CheckOnClick = true };
         countdown.Click += (_, _) =>
         {
             var current = _store.Load();
@@ -165,7 +183,7 @@ internal sealed class TrayApplication : IDisposable
             _bossTimer.Apply();
         };
 
-        var lockOverlay = new ToolStripMenuItem("Lock countdown position") { CheckOnClick = true };
+        var lockOverlay = new ToolStripMenuItem(Strings.Get("menu.lockCountdown")) { CheckOnClick = true };
         lockOverlay.Click += (_, _) => _bossTimer.SetLocked(lockOverlay.Checked);
 
         // Reflect stored state each time the menu opens, so it stays in step with the settings page.
@@ -177,10 +195,10 @@ internal sealed class TrayApplication : IDisposable
             lockOverlay.Enabled = overlay.ShowBossCountdown;
         };
 
-        var settings = new ToolStripMenuItem("Settings…");
+        var settings = new ToolStripMenuItem(Strings.Get("menu.settings"));
         settings.Click += (_, _) => ShowSettings();
 
-        var exit = new ToolStripMenuItem("Exit");
+        var exit = new ToolStripMenuItem(Strings.Get("menu.exit"));
         exit.Click += (_, _) => Application.Exit();
 
         menu.Items.Add(capture);
@@ -266,36 +284,70 @@ internal sealed class TrayApplication : IDisposable
             //
             // What genuinely needs a build is the PvE/PvP axis, and the prompt now handles its absence
             // by asking rather than assuming. See DescribeNoTarget in TlSystemPrompt.
-            var result = await _gated.CaptureAsync(
-                new CaptureRequest
+            // RETAKE LOOP. The capture has to happen with no Loadstar window in the way, so a retake
+            // cannot be done from inside the dialog — the dialog closes, the player is given a moment to
+            // bring the game forward and open the right screen, and the capture runs again.
+            //
+            // Worth the loop because the hotkey fires on whatever happens to be on screen, and a capture
+            // of the open world answers almost nothing. Before this, that cost the player the entire
+            // interaction: cancel, navigate, find the hotkey, retype the question.
+            CapturedFrame frame;
+            string question;
+            string? carried = null;
+
+            while (true)
+            {
+                var result = await _gated.CaptureAsync(
+                    new CaptureRequest
+                    {
+                        Target = settings.Capture.ToWindowTarget(),
+                        Region = ScreenRegions.FullWindow,
+                        PrivacyMasks = ScreenRegions.PrivacyMasks,
+                        Label = "game window",
+                        Timeout = TimeSpan.FromSeconds(8),
+                    },
+                    CancellationToken.None);
+
+                if (!result.Success)
                 {
-                    Target = settings.Capture.ToWindowTarget(),
-                    Region = ScreenRegions.FullWindow,
-                    PrivacyMasks = ScreenRegions.PrivacyMasks,
-                    Label = "game window",
-                    Timeout = TimeSpan.FromSeconds(8),
-                },
-                CancellationToken.None);
+                    ShowBalloon($"Capture {result.Status}", result.Detail ?? "Unknown failure.", ToolTipIcon.Warning);
+                    return;
+                }
 
-            if (!result.Success)
-            {
-                ShowBalloon($"Capture {result.Status}", result.Detail ?? "Unknown failure.", ToolTipIcon.Warning);
-                return;
+                var candidate = result.Frame;
+
+                using var stream = new MemoryStream(candidate.Png);
+                using var preview = Image.FromStream(stream);
+
+                using var ask = new AskWindow(
+                    (Image)preview.Clone(), candidate.WindowTitle, _recentQuestions, carried);
+
+                var choice = ask.ShowDialog();
+
+                if (choice == DialogResult.Retry)
+                {
+                    // Carry the typed question across, so fixing the screenshot does not cost the words.
+                    carried = ask.Question;
+
+                    // Cancelling the countdown abandons the whole interaction rather than firing a
+                    // capture nobody is ready for.
+                    if (!WaitForRetake(whatToOpen: null))
+                    {
+                        return;
+                    }
+
+                    continue;
+                }
+
+                if (choice != DialogResult.OK)
+                {
+                    return;
+                }
+
+                frame = candidate;
+                question = ask.Question;
+                break;
             }
-
-            var frame = result.Frame;
-
-            using var stream = new MemoryStream(frame.Png);
-            using var preview = Image.FromStream(stream);
-
-            using var ask = new AskWindow((Image)preview.Clone(), frame.WindowTitle, _recentQuestions);
-
-            if (ask.ShowDialog() != DialogResult.OK)
-            {
-                return;
-            }
-
-            var question = ask.Question;
 
             if (!string.IsNullOrWhiteSpace(question))
             {
@@ -303,7 +355,34 @@ internal sealed class TrayApplication : IDisposable
                 _recentQuestions.Insert(0, question);
             }
 
-            await AnalyseAsync(frame, question, settings);
+            // A retake from the RESULT window re-enters the whole flow: capture, ask, analyse. The
+            // question is kept, so taking the advice to open a different screen costs one click.
+            while (await AnalyseAsync(frame, question, settings))
+            {
+                if (!WaitForRetake(whatToOpen: null))
+                {
+                    return;
+                }
+
+                var again = await _gated.CaptureAsync(
+                    new CaptureRequest
+                    {
+                        Target = settings.Capture.ToWindowTarget(),
+                        Region = ScreenRegions.FullWindow,
+                        PrivacyMasks = ScreenRegions.PrivacyMasks,
+                        Label = "game window",
+                        Timeout = TimeSpan.FromSeconds(8),
+                    },
+                    CancellationToken.None);
+
+                if (!again.Success)
+                {
+                    ShowBalloon($"Capture {again.Status}", again.Detail ?? "Unknown failure.", ToolTipIcon.Warning);
+                    return;
+                }
+
+                frame = again.Frame;
+            }
         }
         catch (Exception ex)
         {
@@ -315,7 +394,8 @@ internal sealed class TrayApplication : IDisposable
         }
     }
 
-    private async Task AnalyseAsync(CapturedFrame frame, string question, LoadstarSettings settings)
+    /// <returns>True when the player asked to retake the screenshot and try the same question again.</returns>
+    private async Task<bool> AnalyseAsync(CapturedFrame frame, string question, LoadstarSettings settings)
     {
         var provider = settings.Ai.Provider;
         var providerInfo = AiCatalog.For(provider);
@@ -327,7 +407,7 @@ internal sealed class TrayApplication : IDisposable
                 "No API key",
                 $"Add your {providerInfo.DisplayName} API key in Settings.",
                 ToolTipIcon.Warning);
-            return;
+            return false;
         }
 
         // Name the provider: this is the moment a screenshot leaves the machine, and which third
@@ -444,7 +524,7 @@ internal sealed class TrayApplication : IDisposable
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
 
-            return;
+            return false;
         }
 
         var advice = AdviceParser.Parse(response.Text, DateTimeOffset.Now, response.Usage);
@@ -460,7 +540,11 @@ internal sealed class TrayApplication : IDisposable
             : null;
 
         using var window = new ResultWindow(advice, plan, question);
-        window.ShowDialog();
+
+        // Retry means the player took the "open that screen and try again" advice. Reported up so the
+        // capture loop can run once more with the question already typed, instead of making them start
+        // from the hotkey.
+        return window.ShowDialog() == DialogResult.Retry;
     }
 
     private static string BuildUserPrompt(string question, IReadOnlyDictionary<TlStat, int> allocated)

@@ -45,11 +45,20 @@ internal sealed class ResultWindow : ThemedForm
 
         bodyFrame.Controls.Add(body);
 
-        var copy = new Button { Text = "Copy" };
-        var close = new Button { Text = "Close", DialogResult = DialogResult.OK };
+        var copy = new Button { Text = Strings.Get("result.copy") };
+        var close = new Button { Text = Strings.Get("result.close"), DialogResult = DialogResult.OK };
+
+        // RETAKE, offered only when the model said this screen could not answer the question. Then it
+        // is the single most useful control in the window -- the advice has just named a screen to open,
+        // and the alternative was closing the window, navigating, finding the hotkey and retyping.
+        //
+        // Hidden otherwise rather than merely disabled: on a good answer a retake button is noise, and
+        // it would sit next to Close inviting a pointless second API call.
+        var retake = new Button { Text = Strings.Get("ask.retake"), DialogResult = DialogResult.Retry };
 
         Theme.MakePrimary(close);
         Theme.MakeSecondary(copy);
+        Theme.MakeSecondary(retake);
 
         copy.Click += (_, _) =>
         {
@@ -58,7 +67,7 @@ internal sealed class ResultWindow : ThemedForm
             if (!string.IsNullOrEmpty(rendered))
             {
                 Clipboard.SetText(rendered);
-                copy.Text = "Copied";
+                copy.Text = Strings.Get("result.copied");
             }
         };
 
@@ -71,8 +80,7 @@ internal sealed class ResultWindow : ThemedForm
         {
             var callToAction = new Label
             {
-                Text = "This screen can't fully answer that — open the screen named below and press "
-                    + "the capture hotkey again.",
+                Text = Strings.Get("result.wrongScreen"),
                 Dock = DockStyle.Top,
                 Height = 38,
                 Padding = new Padding(16, 8, 16, 0),
@@ -84,7 +92,9 @@ internal sealed class ResultWindow : ThemedForm
             Controls.Add(callToAction);
         }
 
-        Controls.Add(CreateActionBar(close, copy));
+        Controls.Add(advice.AnsweredFromScreen
+            ? CreateActionBar(close, copy)
+            : CreateActionBar(retake, close, copy));
         Controls.Add(CreateHeading(advice.Headline));
 
         AcceptButton = close;

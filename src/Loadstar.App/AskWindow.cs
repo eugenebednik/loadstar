@@ -34,7 +34,15 @@ internal sealed class AskWindow : ThemedForm
 
     public string Question => _question.Text.Trim();
 
-    public AskWindow(Image preview, string windowTitle, IReadOnlyList<string> recentQuestions)
+    /// <param name="initialQuestion">
+    /// Text to start with, used to carry a typed question across a RETAKE. Losing what someone wrote
+    /// because they fixed the screenshot would make the retake button feel like a punishment.
+    /// </param>
+    public AskWindow(
+        Image preview,
+        string windowTitle,
+        IReadOnlyList<string> recentQuestions,
+        string? initialQuestion = null)
     {
         Text = "Loadstar";
         StartPosition = FormStartPosition.CenterScreen;
@@ -54,6 +62,21 @@ internal sealed class AskWindow : ThemedForm
             Padding = new Padding(16, 0, 16, 0),
             AutoEllipsis = true,
             ForeColor = Theme.SubtleText,
+        };
+
+        // The single most useful thing this dialog can say. The capture fires on the hotkey, so it
+        // catches whatever was on screen — and the open world answers almost nothing, while the
+        // character sheet carries item level per slot, Gear Score and the Equipment watermark. Players
+        // hit the hotkey from wherever they happen to be standing and then wonder why the advice is
+        // thin; saying so where the preview is visible is the moment it lands.
+        var hint = new Label
+        {
+            Text = Strings.Get("ask.hint"),
+            Dock = DockStyle.Top,
+            Height = 40,
+            Padding = new Padding(16, 0, 16, 4),
+            ForeColor = Theme.Accent,
+            BackColor = Color.Transparent,
         };
 
         // Showing exactly what will be sent is the capture indicator the posture document requires,
@@ -83,6 +106,7 @@ internal sealed class AskWindow : ThemedForm
             ScrollBars = ScrollBars.Vertical,
             BorderStyle = BorderStyle.FixedSingle,
             PlaceholderText = Strings.Get("ask.placeholder"),
+            Text = initialQuestion ?? string.Empty,
         };
 
         // CLICKABLE LABELS, NOT BUTTONS, and stacked rather than in a row.
@@ -139,8 +163,18 @@ internal sealed class AskWindow : ThemedForm
         var ask = new Button { Text = Strings.Get("ask.send"), DialogResult = DialogResult.OK };
         var cancel = new Button { Text = Strings.Get("common.cancel"), DialogResult = DialogResult.Cancel };
 
+        // RETAKE, as DialogResult.Retry. The caller loops on it rather than the dialog re-capturing
+        // itself, because the capture has to happen with this window out of the way — the same reason
+        // the first capture happens before the dialog opens at all.
+        //
+        // Without this, a capture of the open world cost the player the whole interaction: cancel, walk
+        // to a menu, find the hotkey again, retype the question. The wrong-screen case is common enough
+        // that it deserves one button.
+        var retake = new Button { Text = Strings.Get("ask.retake"), DialogResult = DialogResult.Retry };
+
         Theme.MakePrimary(ask);
         Theme.MakeSecondary(cancel);
+        Theme.MakeSecondary(retake);
 
         // Taller than before, because the stacked suggestions occupy three lines where the old chip row
         // occupied one. Sized so the text box keeps roughly the height it had rather than being
@@ -158,7 +192,10 @@ internal sealed class AskWindow : ThemedForm
 
         Controls.Add(previewFrame);
         Controls.Add(lower);
-        Controls.Add(CreateActionBar(ask, cancel));
+        // RightToLeft flow: first argument lands rightmost. Ask keeps the corner, Retake sits next
+        // to Cancel so a stray click near the primary action cannot trigger a recapture.
+        Controls.Add(CreateActionBar(ask, retake, cancel));
+        Controls.Add(hint);
         Controls.Add(caption);
         Controls.Add(heading);
 
@@ -175,7 +212,14 @@ internal sealed class AskWindow : ThemedForm
             }
         };
 
-        Shown += (_, _) => { Activate(); _question.Focus(); };
+        Shown += (_, _) =>
+        {
+            Activate();
+            _question.Focus();
+            // Caret after any restored text, so a carried-over question can be edited rather than
+            // replaced by the first keystroke.
+            _question.SelectionStart = _question.TextLength;
+        };
     }
 
     protected override void Dispose(bool disposing)

@@ -149,4 +149,23 @@ public sealed class TlSystemPromptTests
         Assert.Equal(TlSystemPrompt.Build(null, []), TlSystemPrompt.Build(null, []));
         Assert.Equal(TlSystemPrompt.Build(Sample, ["pve"]), TlSystemPrompt.Build(Sample, ["pve"]));
     }
+
+    /// <summary>
+    /// The wrong-screen path has to be presented as CHEAP, or the model strains an answer out of a
+    /// screenshot that cannot support one. A Retake button now runs the same question against a new
+    /// image without the player retyping anything, so naming the right screen beats hedging.
+    /// </summary>
+    [Fact]
+    public void TheWrongScreenPathIsPresentedAsTheCheapOption()
+    {
+        var prompt = TlSystemPrompt.Build(null, []);
+
+        Assert.Contains("Retake button", prompt, StringComparison.Ordinal);
+        Assert.Contains("no reason to strain an answer out of the wrong screen", prompt, StringComparison.Ordinal);
+
+        // The rune case specifically, because it is the one that prompted this: a question about runes
+        // asked against a character sheet must name the Rune Book rather than guess.
+        Assert.Contains("Open the Rune Book", prompt, StringComparison.Ordinal);
+        Assert.Contains("The Rune Book", prompt, StringComparison.Ordinal);
+    }
 }

@@ -278,8 +278,16 @@ public static class TlSystemPrompt
         The player captures whatever was in front of them, which is often not what their question
         needs. If someone asks "look at my gear score" while the screenshot shows open world, DO NOT
         guess, and do not answer from memory of an earlier capture. Set `answeredFromScreen` to
-        false, and put a specific instruction in `missingInformation`: which screen to open, and
-        that they should press the capture hotkey again once it is showing.
+        false, and NAME THE SCREEN in `missingInformation`.
+
+        **This is cheap for the player, so use it freely.** Setting `answeredFromScreen` to false puts
+        a Retake button in front of them: they open the screen you named, press it, and the same
+        question runs again against the right image. They do not lose what they typed and they do not
+        have to find the hotkey. So there is no reason to strain an answer out of the wrong screen —
+        naming the right one is faster for them than a hedged guess, and far more useful.
+
+        Be concrete about what is missing. "Open the Rune Book" beats "I cannot see your runes",
+        because the first is an instruction and the second is an observation.
 
         Be specific about the screen, because "open your character screen" is often not enough:
 
