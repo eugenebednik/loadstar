@@ -37,6 +37,32 @@ internal static class Program
             return;
         }
 
+        // --ask opens the ask dialog with synthetic screens, for the same reason --settings exists: the
+        // multi-screen layout cannot be checked without four captures and a running game, and "ask the
+        // user to test it" is a slow way to find out a panel did not render. Takes a count so one, two,
+        // three and four screens can each be looked at.
+        if (args.FirstOrDefault(a => a.StartsWith("--ask", StringComparison.OrdinalIgnoreCase)) is { } askArg)
+        {
+            ApplicationConfiguration.Initialize();
+
+            var store = new Core.Configuration.SettingsStore();
+            Core.Diagnostics.Log.Initialize(store.Directory);
+            Strings.Use(store.Load().Language);
+
+            var count = int.TryParse(askArg.Split('=').ElementAtOrDefault(1), out var n)
+                ? Math.Clamp(n, 1, Core.Capture.PendingCaptures.Maximum)
+                : Core.Capture.PendingCaptures.Maximum;
+
+            using var ask = new AskWindow(
+                [.. Enumerable.Range(1, count).Select(SyntheticScreen)],
+                "THRONE AND LIBERTY (synthetic)",
+                "Ctrl+Alt+S",
+                ["how do I get stronger"]);
+
+            Application.Run(ask);
+            return;
+        }
+
         // A restart launches the replacement before the outgoing copy has finished shutting down, so
         // the replacement waits here. Both things it needs are still held by the old process: the
         // mutex below, and the global hotkey — and losing the hotkey race is the quiet failure, since
@@ -184,4 +210,43 @@ internal static class Program
             MessageBoxButtons.OK,
             MessageBoxIcon.Error);
     }
+
+    /// <summary>
+    /// A stand-in game screen for <c>--ask</c>: numbered, 16:9, and obviously not a real capture, so a
+    /// screenshot of the dialog cannot be mistaken for one taken in game.
+    /// </summary>
+    private static Core.Capture.CapturedFrame SyntheticScreen(int number)
+    {
+        using var bitmap = new Bitmap(1920, 1080);
+        using var graphics = Graphics.FromImage(bitmap);
+
+        Color[] tints = [Color.FromArgb(40, 60, 90), Color.FromArgb(80, 50, 40), Color.FromArgb(40, 80, 55), Color.FromArgb(70, 45, 80)];
+
+        graphics.Clear(tints[(number - 1) % tints.Length]);
+
+        using var font = new Font("Segoe UI", 220, FontStyle.Bold);
+        using var brush = new SolidBrush(Color.FromArgb(210, 235, 245, 255));
+
+        graphics.DrawString(
+            number.ToString(),
+            font,
+            brush,
+            new RectangleF(0, 0, 1920, 1080),
+            new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center });
+
+        using var stream = new MemoryStream();
+
+        bitmap.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
+
+        return new Core.Capture.CapturedFrame
+        {
+            Png = stream.ToArray(),
+            Width = 1920,
+            Height = 1080,
+            CapturedAt = DateTimeOffset.UtcNow,
+            WindowTitle = "THRONE AND LIBERTY (synthetic)",
+            Label = $"synthetic screen {number}",
+        };
+    }
+
 }

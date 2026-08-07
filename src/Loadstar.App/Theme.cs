@@ -152,6 +152,19 @@ internal static class Theme
                     list.Font = UiFont;
                     break;
 
+                // BEFORE the Button case, which it derives from and would otherwise match. MakeSecondary
+                // sets Font = UiFont, and an IconButton's whole label is a glyph from an icon font — so
+                // the generic path renders it as an empty rectangle. Same failure mode as the checkbox
+                // above: a constructor setting silently overwritten from here at OnShown.
+                case IconButton icon:
+                    icon.BackColor = Surface;
+                    icon.ForeColor = SubtleText;
+                    icon.FlatStyle = FlatStyle.Flat;
+                    icon.FlatAppearance.BorderSize = 0;
+                    icon.FlatAppearance.MouseOverBackColor = Accent;
+                    icon.Cursor = Cursors.Hand;
+                    break;
+
                 case Button button:
                     if (button.BackColor != Accent)
                     {

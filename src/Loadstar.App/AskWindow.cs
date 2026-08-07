@@ -42,9 +42,23 @@ internal sealed class AskWindow : ThemedForm
     public const DialogResult AddAnother = DialogResult.Ignore;
 
     private readonly TextBox _question;
-    private readonly PictureBox _preview;
-    private readonly Panel _strip;
+
+    /// <summary>
+    /// All queued screens at once, side by side, rather than one big preview plus a thumbnail strip.
+    ///
+    /// <para>A layout container and not absolute positions: the strip it replaces placed thumbnails by
+    /// hand inside a plain Panel, which meant every count needed its own arithmetic. A
+    /// TableLayoutPanel sizes the cells itself and cannot be off by a margin.</para>
+    /// </summary>
+    private readonly TableLayoutPanel _grid;
+
     private readonly Label _queued;
+
+    /// <summary>
+    /// Names what the delete button does. An icon-only control is unlabelled by definition, and a trash
+    /// can on the one control that discards a capture deserves to be unambiguous.
+    /// </summary>
+    private readonly ToolTip _tips = new();
 
     /// <summary>The working set. Deletions happen here, and <see cref="Kept"/> is what survived.</summary>
     private readonly List<CapturedFrame> _frames;
@@ -93,7 +107,7 @@ internal sealed class AskWindow : ThemedForm
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
-        ClientSize = new Size(760, 700);
+        ClientSize = new Size(820, 780);
         TopMost = true;
 
         var heading = CreateHeading(Strings.Get("ask.title"));
@@ -124,29 +138,19 @@ internal sealed class AskWindow : ThemedForm
         };
 
         // Showing exactly what will be sent is the capture indicator the posture document requires,
-        // in its most literal form: the user sees the images before they leave the machine.
-        _preview = new PictureBox
+        // in its most literal form: the user sees every image before any of them leave the machine.
+        _grid = new TableLayoutPanel
         {
-            SizeMode = PictureBoxSizeMode.Zoom,
             Dock = DockStyle.Fill,
-            BackColor = Theme.PreviewBackdrop,
-        };
-
-        // Hidden at one screen, and its height genuinely reclaimed — an invisible docked control is
-        // excluded from layout, so the single-screen case keeps a preview 88px taller rather than
-        // reserving space for a strip it will never show. There is no layout jump to protect against
-        // either way: adding a screen closes this dialog and opens a new one.
-        _strip = new Panel
-        {
-            Dock = DockStyle.Bottom,
-            Height = 88,
             BackColor = Theme.Background,
         };
 
+        // TWO LINES, not one. At one line the Russian string was clipped mid-sentence — it is a whole
+        // sentence in every language and several are longer than the English.
         _queued = new Label
         {
             Dock = DockStyle.Bottom,
-            Height = 20,
+            Height = 38,
             ForeColor = Theme.SubtleText,
             BackColor = Color.Transparent,
             Tag = hotkeyDisplay,
@@ -159,9 +163,8 @@ internal sealed class AskWindow : ThemedForm
             BackColor = Theme.Background,
         };
 
-        previewFrame.Controls.Add(_preview);
+        previewFrame.Controls.Add(_grid);
         previewFrame.Controls.Add(_queued);
-        previewFrame.Controls.Add(_strip);
 
         _question = new TextBox
         {
@@ -249,7 +252,7 @@ internal sealed class AskWindow : ThemedForm
         var lower = new Panel
         {
             Dock = DockStyle.Bottom,
-            Height = 210,
+            Height = 190,
             Padding = new Padding(16, 4, 16, 4),
             BackColor = Theme.Background,
         };
@@ -292,24 +295,29 @@ internal sealed class AskWindow : ThemedForm
     }
 
     /// <summary>
-    /// Redraws the thumbnail strip and the big preview from <see cref="_frames"/>.
+    /// Redraws every cell from <see cref="_frames"/>.
     ///
-    /// <para>Rebuilds wholesale rather than patching, because a delete renumbers every thumbnail after it
-    /// and reusing controls means keeping their indexes in step with the list. The strip is at most four
-    /// small controls; correctness is worth more than the redraw.</para>
+    /// <para>Rebuilds wholesale rather than patching, because a delete renumbers every screen after it
+    /// and reusing controls means keeping their indexes in step with the list. Four cells is nothing to
+    /// rebuild; correctness is worth more than the redraw.</para>
     /// </summary>
     private void Rebuild()
     {
+        // NEVER BRANCH ON Control.Visible HERE. Its getter is EFFECTIVE visibility — it walks the parent
+        // chain — so during the constructor, with the form not yet shown, it reads false however it was
+        // just set. An earlier version guarded the cell loop with it and silently built nothing: the
+        // dialog showed one screen no matter how many were queued, and the strip rendered as an empty
+        // band. Branch on the frame count, which is what the decision is actually about.
+        var count = _frames.Count;
+
         // ORDER MATTERS. Everything pointing at the old images has to be torn down before the images go,
         // or a control is left holding a disposed Bitmap. Controls.Clear() detaches without disposing, so
-        // the thumbnails are disposed explicitly — otherwise every rebuild leaks four PictureBoxes.
-        _preview.Image = null;
-
-        while (_strip.Controls.Count > 0)
+        // the cells are disposed explicitly — otherwise every rebuild leaks a PictureBox per screen.
+        while (_grid.Controls.Count > 0)
         {
-            var stale = _strip.Controls[0];
+            var stale = _grid.Controls[0];
 
-            _strip.Controls.RemoveAt(0);
+            _grid.Controls.RemoveAt(0);
             stale.Dispose();
         }
 
@@ -331,84 +339,100 @@ internal sealed class AskWindow : ThemedForm
             _images.Add(new Bitmap(decoded));
         }
 
-        _selected = Math.Clamp(_selected, 0, _frames.Count - 1);
-        _preview.Image = _images[_selected];
+        // One screen fills the area; two sit side by side; three or four go two-by-two. A fixed 2x2 would
+        // waste half the space on the common single-screen case, and a single row would make four screens
+        // tall thin slivers that letterbox down to nothing.
+        var columns = count == 1 ? 1 : 2;
+        var rows = count <= 2 ? 1 : 2;
 
-        // Only worth showing once there is a choice to make. A one-item strip is a delete button that
-        // must be disabled next to a thumbnail identical to the preview above it.
-        _strip.Visible = _frames.Count > 1;
+        _grid.ColumnStyles.Clear();
+        _grid.RowStyles.Clear();
+        _grid.ColumnCount = columns;
+        _grid.RowCount = rows;
 
-        if (_strip.Visible)
+        for (var c = 0; c < columns; c++)
         {
-            for (var i = 0; i < _frames.Count; i++)
-            {
-                _strip.Controls.Add(CreateThumbnail(i));
-            }
+            _grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / columns));
+        }
+
+        for (var r = 0; r < rows; r++)
+        {
+            _grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / rows));
+        }
+
+        for (var i = 0; i < count; i++)
+        {
+            _grid.Controls.Add(CreateCell(i), i % columns, i / columns);
         }
 
         // Re-themed here, not only by ThemedForm.OnShown. That runs once, and every rebuild after a
-        // delete creates controls it will never see — so a strip rebuilt mid-dialog would render in the
+        // delete creates controls it will never see — so a cell rebuilt mid-dialog would render in the
         // system palette next to a dark dialog. Cheap, and idempotent.
-        if (_strip.Visible)
-        {
-            Theme.Apply(_strip);
-        }
+        Theme.Apply(_grid);
 
-        _queued.Text = _frames.Count >= PendingCaptures.Maximum
-            ? string.Format(Strings.Get("ask.shots.replacing"), _frames.Count)
+        _queued.Text = count >= PendingCaptures.Maximum
+            ? string.Format(Strings.Get("ask.shots.replacing"), count)
             : string.Format(
-                Strings.Get("ask.shots.queued"),
-                _frames.Count,
-                PendingCaptures.Maximum,
-                (string)_queued.Tag!);
+                Strings.Get("ask.shots.queued"), count, PendingCaptures.Maximum, (string)_queued.Tag!);
     }
 
-    private Control CreateThumbnail(int index)
+    /// <summary>
+    /// One screen: a header carrying its number and a delete button, and the image below it.
+    ///
+    /// <para>The delete button sits in a DOCKED header rather than floating over the image. Overlaying it
+    /// would mean positioning by hand against a control whose size the grid decides, and it would cover
+    /// part of the very thing the player is being shown to check.</para>
+    /// </summary>
+    private Control CreateCell(int index)
     {
-        var holder = new Panel
+        var cell = new Panel
         {
-            Width = 132,
-            Height = 80,
-            Left = 16 + (index * 140),
-            Top = 4,
-            BackColor = index == _selected ? Theme.Accent : Theme.Background,
-            Padding = new Padding(2),
+            Dock = DockStyle.Fill,
+            Margin = new Padding(4),
+            BackColor = Theme.Background,
         };
 
-        var thumb = new PictureBox
+        var image = new PictureBox
         {
             Image = _images[index],
             SizeMode = PictureBoxSizeMode.Zoom,
             Dock = DockStyle.Fill,
             BackColor = Theme.PreviewBackdrop,
-            Cursor = Cursors.Hand,
         };
 
-        // DEFERRED, not immediate. Rebuild disposes this very PictureBox, and disposing a control while
-        // its own click handler is still on the stack leaves WinForms touching a dead control on the way
-        // out — mouse capture release, focus bookkeeping. BeginInvoke posts the rebuild so it runs after
-        // the click has finished unwinding.
-        thumb.Click += (_, _) =>
+        var header = new Panel
         {
-            _selected = index;
-            BeginInvoke(Rebuild);
-        };
-
-        // The delete control. A LinkLabel rather than a Button so it reads as an action on the thumbnail
-        // instead of a fifth dialog button competing with Ask.
-        var remove = new LinkLabel
-        {
-            Text = "✕",
-            AutoSize = true,
-            Cursor = Cursors.Hand,
+            Dock = DockStyle.Top,
+            Height = 22,
             BackColor = Theme.Background,
-            Padding = new Padding(3, 1, 3, 1),
         };
 
-        remove.LinkClicked += (_, _) =>
+        var ordinal = new Label
         {
-            // Never to zero. Ask with nothing attached is not a state this dialog can be in, and Retake
-            // already covers "replace the only screen I have".
+            Text = string.Format(Strings.Get("ask.shots.ordinal"), index + 1),
+            Dock = DockStyle.Left,
+            AutoSize = true,
+            ForeColor = Theme.SubtleText,
+            BackColor = Color.Transparent,
+        };
+
+        var remove = new IconButton
+        {
+            Text = TrashGlyph,
+            Font = TrashFont,
+            Dock = DockStyle.Right,
+            Width = 36,
+        };
+
+        _tips.SetToolTip(remove, Strings.Get("ask.shots.remove"));
+
+        // Never to zero. Ask with nothing attached is not a state this dialog can be in, and Retake
+        // already covers "replace the only screen I have" — so the button is absent rather than disabled
+        // when there is one screen, because a disabled control invites working out how to enable it.
+        remove.Visible = _frames.Count > 1;
+
+        remove.Click += (_, _) =>
+        {
             if (_frames.Count <= 1)
             {
                 return;
@@ -416,53 +440,56 @@ internal sealed class AskWindow : ThemedForm
 
             _frames.RemoveAt(index);
 
-            if (_selected >= _frames.Count)
-            {
-                _selected = _frames.Count - 1;
-            }
-
-            // Deferred for the same reason as the thumbnail click: this LinkLabel is one of the controls
-            // Rebuild disposes.
+            // DEFERRED. Rebuild disposes this very button, and disposing a control while its own click
+            // handler is on the stack leaves WinForms touching a dead control on the way out — mouse
+            // capture release, focus bookkeeping. BeginInvoke runs the rebuild after the click unwinds.
             BeginInvoke(Rebuild);
         };
 
-        var ordinal = new Label
-        {
-            Text = (index + 1).ToString(),
-            AutoSize = true,
-            BackColor = Theme.Background,
-            ForeColor = Theme.SubtleText,
-            Padding = new Padding(3, 1, 3, 1),
-        };
+        header.Controls.Add(ordinal);
+        header.Controls.Add(remove);
 
-        holder.Controls.Add(thumb);
+        // Image first so the docked header takes its band off the top and the image fills what is left.
+        cell.Controls.Add(image);
+        cell.Controls.Add(header);
 
-        // Added after the picture box and positioned last, so they sit above it rather than behind.
-        holder.Controls.Add(remove);
-        holder.Controls.Add(ordinal);
-
-        remove.BringToFront();
-        ordinal.BringToFront();
-
-        holder.Layout += (_, _) =>
-        {
-            remove.Left = holder.ClientSize.Width - remove.Width - 3;
-            remove.Top = 3;
-            ordinal.Left = 3;
-            ordinal.Top = holder.ClientSize.Height - ordinal.Height - 3;
-        };
-
-        return holder;
+        return cell;
     }
+
+    /// <summary>
+    /// A trash can from Segoe MDL2 Assets, or a plain cross where that font is missing.
+    ///
+    /// <para>Probed rather than assumed. MDL2 ships with Windows 10 and later, which this app already
+    /// requires, but a missing icon font renders as a tofu box — and an unreadable delete button on the
+    /// control that discards a screenshot is worth two lines to avoid.</para>
+    /// </summary>
+    private static readonly bool HasIconFont = FontFamily.Families
+        .Any(f => f.Name is "Segoe Fluent Icons" or "Segoe MDL2 Assets");
+
+    private static string TrashGlyph => HasIconFont ? "\uE74D" : "\u2715";
+
+    /// <summary>
+    /// Created once, not per cell. As a property returning <c>new Font(...)</c> this minted a font for
+    /// every cell of every rebuild and disposed none of them — a GDI handle leak that grows with how much
+    /// the player uses the feature.
+    /// </summary>
+    private static readonly Font TrashFont = HasIconFont
+        ? new Font(
+            FontFamily.Families.Any(f => f.Name == "Segoe Fluent Icons")
+                ? "Segoe Fluent Icons"
+                : "Segoe MDL2 Assets",
+            11f)
+        : Theme.UiFont;
 
     protected override void Dispose(bool disposing)
     {
         if (disposing)
         {
             // The previews are clones of the captures; releasing them here keeps a long session from
-            // accumulating full-resolution bitmaps. Cleared from the PictureBox first so nothing is
-            // holding a disposed image at paint time.
-            _preview.Image = null;
+            // accumulating full-resolution bitmaps. The cells go first, so nothing is holding a disposed
+            // image at paint time.
+            _grid.Controls.Clear();
+            _tips.Dispose();
 
             foreach (var image in _images)
             {
