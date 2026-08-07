@@ -193,9 +193,15 @@ internal sealed class BossTimerService : IDisposable
 
                     if (_fired.Add(key))
                     {
+                        // Abbreviated "min" rather than "minute/minutes" on purpose: Russian alone has
+                        // three plural forms for it, and every language here handles an abbreviation with
+                        // any number. A plural rule per language would be a lot of machinery for a
+                        // notification title.
                         _notify(
-                            $"{spawn.DisplayName} in {offset} minute{(offset == 1 ? string.Empty : "s")}",
-                            $"Spawns at {spawn.SpawnsAt.ToLocalTime():HH:mm} your time.");
+                            string.Format(Strings.Get("alert.title"), BossLabels.DisplayName(spawn), offset),
+                            string.Format(
+                                Strings.Get("alert.body"),
+                                spawn.SpawnsAt.ToLocalTime().ToString("HH:mm")));
                     }
                 }
             }

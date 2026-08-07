@@ -37,6 +37,41 @@ internal sealed class BossOverlay : Form
 
     private const int CornerRadius = 10;
 
+    // LAYOUT IS MEASURED, NOT GUESSED.
+    //
+    // These were literals — 26px rows, the drag hint at Height-20, a 104px window — chosen against one
+    // machine's font metrics. On a 150% display this font's line height is 28.4px, so rows at a 26px
+    // pitch overlapped and the drag hint, drawn at y=84, needed 84..112 inside a 104px window. It was cut
+    // by 8.4px in EVERY language; the Russian strings only made it more obvious.
+    //
+    // So the row pitch and the window height now come from measuring the font. Only the horizontal
+    // paddings stay fixed, because those are deliberate whitespace rather than a function of the text.
+    private const int MaxRows = 3;
+    private const int SidePadding = 14;
+    private const int TopPadding = 8;
+    private const int BottomPadding = 8;
+
+    /// <summary>Breathing room between one row's text and the next.</summary>
+    private const int RowSpacing = 4;
+
+    /// <summary>Gap kept between a row's label and its right-aligned countdown.</summary>
+    private const int RowGap = 18;
+
+    /// <summary>Never smaller than this, so it still reads as a widget when a countdown says "42s".</summary>
+    private const int MinWidth = 250;
+
+    /// <summary>And never wider than this: it is an overlay on someone's game, not a panel.</summary>
+    private const int MaxWidth = 560;
+
+    /// <summary>
+    /// Measured line height for the UI font, cached because measuring needs a Graphics and this is read
+    /// on every paint. Set by <see cref="FitToContent"/> before it is used.
+    /// </summary>
+    private int _lineHeight = 20;
+
+    /// <summary>Vertical distance from one row's top to the next.</summary>
+    private int RowHeight => _lineHeight + RowSpacing;
+
     private readonly System.Windows.Forms.Timer _tick;
     private readonly Func<IReadOnlyList<BossSpawn>> _spawns;
     private readonly Action<Point> _onMoved;
@@ -57,7 +92,9 @@ internal sealed class BossOverlay : Form
         TopMost = true;
         StartPosition = FormStartPosition.Manual;
         Location = location;
-        ClientSize = new Size(250, 104);
+        // Replaced immediately by FitToContent, which measures the real text. This is only a
+        // sensible size for the first frame.
+        ClientSize = new Size(MinWidth, 104);
         BackColor = Color.FromArgb(18, 20, 26);
         Opacity = Math.Clamp(opacity, 0.2, 1.0);
         DoubleBuffered = true;
@@ -65,7 +102,11 @@ internal sealed class BossOverlay : Form
         Cursor = _locked ? Cursors.Default : Cursors.SizeAll;
 
         _tick = new System.Windows.Forms.Timer { Interval = 1000 };
-        _tick.Tick += (_, _) => Invalidate();
+        _tick.Tick += (_, _) =>
+        {
+            FitToContent();
+            Invalidate();
+        };
         _tick.Start();
     }
 
@@ -85,6 +126,10 @@ internal sealed class BossOverlay : Form
 
             _locked = value;
             Cursor = value ? Cursors.Default : Cursors.SizeAll;
+
+            // The drag hint occupies a line only while unlocked, so the window has to shrink or grow
+            // with it rather than leave a dead band at the bottom.
+            FitToContent();
 
             if (IsHandleCreated)
             {
@@ -117,6 +162,14 @@ internal sealed class BossOverlay : Form
 
     /// <summary>Never take focus, even if something tries to activate it.</summary>
     protected override bool ShowWithoutActivation => true;
+
+    protected override void OnShown(EventArgs e)
+    {
+        base.OnShown(e);
+
+        // Before the first tick, so the widget is never briefly the wrong size on screen.
+        FitToContent();
+    }
 
     protected override void OnResize(EventArgs e)
     {
@@ -169,6 +222,79 @@ internal sealed class BossOverlay : Form
         Invalidate();
     }
 
+    /// <summary>
+    /// Grows the window to fit its own text.
+    ///
+    /// <para><b>A fixed 250x104 was sized against English and clipped everything longer.</b> "drag to
+    /// move" became "перетащите, чтобы пере" with the rest off the right edge, and the localised event
+    /// labels — "Динамические события", "Выберите сервер в настройках" — did the same. Nine languages
+    /// cannot share one guessed width.</para>
+    ///
+    /// <para>Measured rather than merely widened, because the countdown is right-aligned: the label and
+    /// the time must not collide, and how much room each needs depends on the language AND on whether a
+    /// row currently reads "2h 05m" or "42s". Clamped so it stays a small overlay rather than growing to
+    /// span the screen on a long boss list.</para>
+    ///
+    /// <para>Called from the tick, not from OnPaint — changing size inside a paint handler re-enters
+    /// layout and repaints, which is its own class of bug.</para>
+    /// </summary>
+    private void FitToContent()
+    {
+        var spawns = _spawns();
+        var now = Loadstar.Core.Time.TimeSync.Now;
+
+        using var graphics = CreateGraphics();
+
+        // The number everything else derives from. "Xg" spans an ascender and a descender, so it
+        // measures a full line rather than the tallest glyph in whatever text happens to be showing.
+        _lineHeight = (int)Math.Ceiling(graphics.MeasureString("Xg", Theme.UiFont).Height);
+
+        var widest = 0f;
+
+        if (spawns.Count == 0)
+        {
+            foreach (var key in new[] { "overlay.title", "overlay.pickServer" })
+            {
+                widest = Math.Max(widest, graphics.MeasureString(Strings.Get(key), Theme.UiFont).Width);
+            }
+        }
+        else
+        {
+            foreach (var spawn in spawns.Take(MaxRows))
+            {
+                // Label and right-aligned countdown share the row, so the requirement is their sum plus
+                // a gap that keeps them visibly separate.
+                var label = graphics.MeasureString(BossLabels.DisplayName(spawn), Theme.UiFont).Width;
+                var time = graphics.MeasureString(spawn.Countdown(spawn.SpawnsAt - now), Theme.UiFont).Width;
+
+                widest = Math.Max(widest, label + time + RowGap);
+            }
+        }
+
+        if (!_locked)
+        {
+            widest = Math.Max(widest, graphics.MeasureString(Strings.Get("overlay.drag"), Theme.UiFont).Width);
+        }
+
+        var rows = Math.Max(spawns.Count == 0 ? 2 : Math.Min(spawns.Count, MaxRows), 1);
+
+        var width = (int)Math.Ceiling(widest) + (SidePadding * 2);
+
+        // The drag hint is a full line of text plus its own spacing, and it only exists while unlocked —
+        // reserving room for it when locked left a dead band at the bottom.
+        var height = TopPadding + (rows * RowHeight) + BottomPadding
+            + (_locked ? 0 : _lineHeight + RowSpacing);
+
+        var target = new Size(Math.Clamp(width, MinWidth, MaxWidth), height);
+
+        // Only when it actually changed: assigning ClientSize unconditionally would relayout and
+        // repaint every second for nothing.
+        if (ClientSize != target)
+        {
+            ClientSize = target;
+        }
+    }
+
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;
@@ -184,17 +310,17 @@ internal sealed class BossOverlay : Form
 
         if (_current.Count == 0)
         {
-            DrawLine(g, "Boss timer", 12, Theme.SubtleText);
-            DrawLine(g, "Pick a server in Settings", 34, Theme.SubtleText);
+            DrawLine(g, Strings.Get("overlay.title"), TopPadding, Theme.SubtleText);
+            DrawLine(g, Strings.Get("overlay.pickServer"), TopPadding + RowHeight, Theme.SubtleText);
             return;
         }
 
-        var y = 10;
+        var y = TopPadding;
         // Corrected time — the overlay does its own countdown arithmetic on every repaint, so reading
         // the raw system clock here would undo the correction applied upstream.
         var now = Loadstar.Core.Time.TimeSync.Now;
 
-        foreach (var spawn in _current.Take(3))
+        foreach (var spawn in _current.Take(MaxRows))
         {
             var remaining = spawn.SpawnsAt - now;
 
@@ -209,15 +335,22 @@ internal sealed class BossOverlay : Form
                 ? Color.FromArgb(255, 120, 110)
                 : spawn.IsDynamicEvent ? Color.Gainsboro : Theme.Accent;
 
-            DrawLine(g, spawn.DisplayName, y, colour);
+            // Localised here rather than on BossSpawn: the game-knowledge layer holds the event
+            // type as data and cannot see Strings. Boss NAMES pass through untranslated, because
+            // the player has to find them on their own screen.
+            DrawLine(g, BossLabels.DisplayName(spawn), y, colour);
             DrawLine(g, spawn.Countdown(remaining), y, colour, rightAlign: true);
 
-            y += 26;
+            y += RowHeight;
         }
 
         if (!_locked)
         {
-            DrawLine(g, "drag to move", Height - 20, Color.FromArgb(120, 124, 134));
+            DrawLine(
+                g,
+                Strings.Get("overlay.drag"),
+                Height - BottomPadding - _lineHeight,
+                Color.FromArgb(120, 124, 134));
         }
     }
 

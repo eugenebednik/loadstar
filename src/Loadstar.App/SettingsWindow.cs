@@ -316,15 +316,7 @@ internal sealed class SettingsWindow : ThemedForm
         var targetButtons = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Margin = new Padding(0, 0, 0, 8) };
         targetButtons.Controls.AddRange([pick, browse]);
 
-        var hint = new Label
-        {
-            Text = Strings.Get("settings.hint.process"),
-            AutoSize = false,
-            Height = 52,
-            Width = FieldWidth,
-            ForeColor = Theme.SubtleText,
-            BackColor = Color.Transparent,
-        };
+        var hint = Hint("settings.hint.process");
 
         // "Build" alone reads as a compiled build. This is a questlog character loadout.
         Row(grid, Strings.Get("settings.buildUrl"), _buildUrl);
@@ -432,6 +424,28 @@ internal sealed class SettingsWindow : ThemedForm
     /// or pulled from Refresh that the bundled catalogue predates, and saying so is the same choice
     /// the cost estimate makes when it returns null rather than zero.</para>
     /// </summary>
+    /// <summary>
+    /// A hint line under a control, sized to its own text.
+    ///
+    /// <para><b>AutoSize with a width cap, never a fixed Height.</b> Every hint here previously carried a
+    /// hardcoded height measured against the English string, and every language longer than English was
+    /// silently clipped — the Russian coverage hint rendered as "Время вычисляется локально по" and then
+    /// stopped mid-sentence. Capping the WIDTH makes the label wrap and grow downwards, so the text
+    /// decides the height instead of the height deciding how much text is visible.</para>
+    ///
+    /// <para>This is the same failure as the truncated Save button, and it will keep recurring wherever a
+    /// dimension is guessed from one language.</para>
+    /// </summary>
+    private static Label Hint(string key) => new()
+    {
+        Text = Strings.Get(key),
+        AutoSize = true,
+        MaximumSize = new Size(FieldWidth, 0),
+        ForeColor = Theme.SubtleText,
+        BackColor = Color.Transparent,
+        Margin = new Padding(0, 2, 0, 6),
+    };
+
     private void UpdateModelHint()
     {
         if (_provider.SelectedItem is not ProviderChoice choice)
@@ -515,36 +529,11 @@ internal sealed class SettingsWindow : ThemedForm
         var refresh = new Button { Text = Strings.Get("settings.refreshServers"), AutoSize = true, Height = 30, Margin = new Padding(0, 0, 0, 8) };
         refresh.Click += async (_, _) => await LoadServersAsync();
 
-        var coverage = new Label
-        {
-            Text =
-                Strings.Get("settings.hint.coverage"),
-            AutoSize = false,
-            Height = 50,
-            Width = FieldWidth,
-            ForeColor = Theme.SubtleText,
-            BackColor = Color.Transparent,
-        };
+        var coverage = Hint("settings.hint.coverage");
 
-        var alertsHint = new Label
-        {
-            Text = Strings.Get("settings.hint.alertMinutes"),
-            AutoSize = false,
-            Height = 34,
-            Width = FieldWidth,
-            ForeColor = Theme.SubtleText,
-            BackColor = Color.Transparent,
-        };
+        var alertsHint = Hint("settings.hint.alertMinutes");
 
-        var overlayHint = new Label
-        {
-            Text = Strings.Get("settings.hint.overlay"),
-            AutoSize = false,
-            Height = 34,
-            Width = FieldWidth,
-            ForeColor = Theme.SubtleText,
-            BackColor = Color.Transparent,
-        };
+        var overlayHint = Hint("settings.hint.overlay");
 
         Row(grid, Strings.Get("settings.server"), _server);
         Row(grid, string.Empty, refresh);
