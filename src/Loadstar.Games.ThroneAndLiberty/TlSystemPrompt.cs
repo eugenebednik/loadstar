@@ -63,7 +63,12 @@ public static class TlSystemPrompt
         // runes, Succession, Redfrost, masteries and the rest rather than guessing.
         builder.AppendLine("# Game mechanics reference");
         builder.AppendLine();
-        builder.AppendLine(TlKnowledgePack.Text);
+
+        // Trimmed to the player's own class profile when the build names their weapons. The other 44
+        // are about 2,500 tokens of characters they are not playing, and this pack's own header warns
+        // that an unbounded prompt dilutes attention. Falls back to the whole pack when the class is
+        // unknown, because there is then no basis for choosing.
+        builder.AppendLine(TlKnowledgePack.ForClass(TlClasses.Name(target?.WeaponTypes)));
         builder.AppendLine();
         builder.AppendLine(Classes);
         builder.AppendLine();
