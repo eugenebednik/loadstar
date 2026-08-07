@@ -35,11 +35,18 @@
     "next UTC day and Sunday's siege now sits on Monday. localPst is kept on each slot so this file",
     "stays verifiable against the client without doing the arithmetic in your head.",
     "",
-    "DST IS UNRESOLVED. Every slot lands on a whole or half UTC hour and 17:00 Pacific is exactly UTC",
-    "midnight, which reads as UTC-native and therefore DST-immune -- but that is one capture in one",
-    "season. November settles it: if the client still shows 17:00 Pacific after the change, the",
-    "schedule is wall-clock and these stored times have drifted an hour; if it shows 16:00, UTC is",
-    "right. Check it then rather than rediscovering a one-hour error as a mystery."
+    "DST IS RESOLVED 2026-08-07, and UTC storage is correct. Servers run FIXED offsets and do not",
+    "observe daylight saving -- Americas is UTC-5 year-round, not America/New_York. A fixed-offset",
+    "server cannot shift, so these stored instants never drift and the table never needs re-capturing",
+    "for a season. See $serverOffsets.",
+    "",
+    "The prediction this block recorded is therefore answered IN ADVANCE rather than by waiting: it said",
+    "'if the client still shows 17:00 Pacific after the November change, these times have drifted; if it",
+    "shows 16:00, UTC was right.' Since the server holds at UTC-5, 00:00 UTC becomes 16:00 for a Pacific",
+    "player once they fall back to PST. So the answer is 16:00, and no correction is needed.",
+    "",
+    "It is still worth a glance in November -- a prediction confirmed by observation beats one confirmed",
+    "by arithmetic -- but nothing is pending on it."
   ],
 
   "timeBasis": "utc",
@@ -63,8 +70,9 @@
     "A second thing it could not say was discovered later: there are TWO concurrent streams. See",
     "$source under Americas.",
     "",
-    "Also note these client times (17:00/20:00) DO NOT MATCH questlog's Americas grid (19:00/",
-    "22:00). The client is authoritative for the player's own server; see $timezoneWarning."
+    "These client times (17:00/20:00) do not match questlog's Americas grid (19:00/22:00), and that gap",
+    "is RESOLVED: questlog renders server time at UTC-5, the client renders the viewer's local time.",
+    "Both were right. See $timezoneWarning for the arithmetic."
   ],
 
   "$iconIndex": [
@@ -99,8 +107,9 @@
   ],
 
   "$timeModel": [
-    "SUPERSEDED BY $timeBasis ABOVE — this file now stores UTC. Kept because the argument it makes is",
-    "the reason DST is still an open question, and deleting it would leave that question unmotivated.",
+    "SUPERSEDED BY $timeBasis ABOVE — this file now stores UTC, and the DST worry this block raises is",
+    "resolved: servers run FIXED offsets, so there is no seasonal shift to be wrong about. Kept because",
+    "the argument was a good one and being able to see WHY it did not apply is worth more than deleting it.",
     "",
     "It argued for storing WALL-CLOCK times plus a named timeZone, on the grounds that if the game",
     "schedules by Pacific wall clock then 17:00 Pacific is 00:00 UTC in summer and 01:00 UTC in winter,",
@@ -113,29 +122,60 @@
     "some players all the time beats being wrong for all players half the time, and only one of the two",
     "failures is silent.",
     "",
-    "So the trade was made knowingly, and the DST question it turns on is still open — see the November",
-    "test recorded in $timeBasis. If the schedule does prove wall-clock anchored, the fix is NOT to",
-    "revert this: it is a wall-clock table plus the server's own zone, resolved independently of the",
-    "player's machine."
+    "So the trade was made knowingly — and then the premise dissolved. The seasonal cost this block",
+    "priced only exists if the server observes DST, and it does not: Americas is a fixed UTC-5. There is",
+    "no twice-yearly re-capture and no half-the-year error. See $serverOffsets.",
+    "",
+    "Worth keeping the conditional it ends on, because it is still the right answer to a different",
+    "question: if a schedule ever DOES turn out to be wall-clock anchored, the fix is not to revert to",
+    "reading times in the caller's zone — it is a wall-clock table plus the SERVER'S own zone, resolved",
+    "independently of the player's machine."
   ],
 
   "$timezoneWarning": [
-    "UNRESOLVED, AND IT INVALIDATES EVERY HOUR IN THIS FILE IF WRONG.",
+    "RESOLVED 2026-08-07. Kept because the resolution is the useful part, and because this block was",
+    "the longest-standing open question in the file.",
     "",
-    "questlog's calendar renders a 'UTC -07:00' header, which is the VIEWER'S timezone, not the",
-    "server's. So the hour values captured from that page may already be converted into the",
-    "capturing machine's local time rather than being server-local wall clock. Both the Americas",
-    "and Europe slots here were read off that page from a UTC-07:00 machine.",
+    "THE SERVER OFFSETS, supplied by the product owner: Americas UTC-5, Europe UTC+2, Japan/Oceania",
+    "UTC+9. They are FIXED offsets, not DST-observing zones -- see serverUtcOffset on each region.",
     "",
-    "If they are viewer-local, every entry is offset by the difference between UTC-07:00 and the",
-    "player's server timezone — for Europe that is around nine hours, which would make the",
-    "countdown confidently and consistently wrong.",
+    "That settles the two-hour discrepancy that made this file distrust its own numbers. questlog's",
+    "Americas grid says 19:00/22:00; the live client showed 17:00/20:00 to a Pacific player in PDT.",
+    "The arithmetic:",
     "",
-    "TO RESOLVE: load the calendar from a machine in a different timezone, or change the browser",
-    "timezone, and see whether the printed hours move. If they move, they are viewer-local and",
-    "must be converted back to server-local before being stored here. BossSchedule treats these",
-    "as server-local wall clock, which is the correct model — the open question is only whether",
-    "the captured numbers already are."
+    "  19:00 at UTC-5  =  00:00 UTC  =  17:00 PDT (UTC-7)   <- exactly what the client showed",
+    "  22:00 at UTC-5  =  03:00 UTC  =  20:00 PDT           <- exactly what the client showed",
+    "",
+    "So NEITHER SOURCE WAS WRONG. questlog renders SERVER time; the client renders the VIEWER'S local",
+    "time. The gap was the difference between UTC-5 and UTC-7, and this file guessed at everything from",
+    "viewer-local conversion to a bad capture rather than the boring truth.",
+    "",
+    "Note what that means for the 'UTC -07:00' header this block put such weight on: it is NOT what",
+    "questlog renders its grid in. Whatever that header labels, it is not the grid, and reasoning from",
+    "it produced a nine-hour error estimate for Europe that was never real.",
+    "",
+    "The stored Americas values -- 00:00 and 03:00 UTC -- are now confirmed by two independent sources",
+    "that agree once the offsets are known."
+  ],
+
+  "$serverOffsets": [
+    "Servers run FIXED UTC offsets and do not observe daylight saving. That is what makes storing UTC",
+    "safe rather than a seasonal liability, and it is the answer to the DST question this file carried",
+    "as unresolved -- see $timeBasis.",
+    "",
+    "  Americas        UTC-5   (nominally EST, but year-round -- no summer shift)",
+    "  Europe          UTC+2   (nominally CEST, but year-round -- no winter shift to CET)",
+    "  Japan/Oceania   UTC+9   (JST, which has no DST in any case)",
+    "",
+    "RUSSIAN SERVERS ARE OUT OF SCOPE and deliberately have no region here. They are operated by a",
+    "different publisher, run a T1-era build predating the 4.0.0 item rewrite, and the advice engine",
+    "already detects a Russian client and says its knowledge does not apply. Adding a schedule would",
+    "imply the rest of the app's knowledge applied to them, which is the specific failure that",
+    "detection exists to prevent.",
+    "",
+    "Their offset was reported as 'MSK, UTC+4'. Recorded as given, with one note: MSK has been UTC+3",
+    "since 2014, so either the server runs an offset that is not current MSK, or +4 is a slip. Not",
+    "resolved here because nothing in this file depends on it -- but do not treat +4 as confirmed."
   ],
 
   "resetHourLocal": 3,
@@ -144,6 +184,7 @@
   "regions": {
     "Americas": {
       "defaultTimeZone": "America/Los_Angeles",
+      "serverUtcOffset": "-05:00",
       "$tzComment": [
         "PACIFIC, confirmed by a player of the game 2026-08-04: the in-game schedule times are all",
         "Pacific. This was America/New_York until then, which would have put every Americas",
@@ -325,6 +366,7 @@
 
     "Europe": {
       "defaultTimeZone": "Europe/Berlin",
+      "serverUtcOffset": "+02:00",
       "$status": "CAPTURED 2026-08-04 from questlog's event calendar. SEE $timezoneWarning — the hour values are NOT yet confirmed to be server-local.",
       "$note": [
         "Europe is NOT a copy of Americas, which is why assuming it was would have been wrong:",
@@ -338,22 +380,23 @@
         "boss as an image with no alt text, so names only appear on hover."
       ],
       "dailySlots": [
-        { "time": "03:00", "type": "DynamicEvents" },
-        { "time": "06:00", "type": "DynamicEvents" },
-        { "time": "09:00", "type": "DynamicEvents" },
-        { "time": "12:00", "type": "DynamicEvents" },
-        { "time": "13:00", "type": "FieldBosses" },
-        { "time": "16:00", "type": "FieldBosses" },
-        { "time": "19:00", "type": "DynamicEvents" },
-        { "time": "20:00", "type": "FieldBosses" },
-        { "time": "21:00", "type": "DynamicEvents" },
-        { "time": "23:00", "type": "FieldBosses" },
-        { "time": "01:00", "type": "FieldBosses" }
+        { "time": "01:00", "type": "DynamicEvents", "localServer": "03:00" },
+        { "time": "04:00", "type": "DynamicEvents", "localServer": "06:00" },
+        { "time": "07:00", "type": "DynamicEvents", "localServer": "09:00" },
+        { "time": "10:00", "type": "DynamicEvents", "localServer": "12:00" },
+        { "time": "11:00", "type": "FieldBosses", "localServer": "13:00" },
+        { "time": "14:00", "type": "FieldBosses", "localServer": "16:00" },
+        { "time": "17:00", "type": "DynamicEvents", "localServer": "19:00" },
+        { "time": "18:00", "type": "FieldBosses", "localServer": "20:00" },
+        { "time": "19:00", "type": "DynamicEvents", "localServer": "21:00" },
+        { "time": "21:00", "type": "FieldBosses", "localServer": "23:00" },
+        { "time": "23:00", "type": "FieldBosses", "localServer": "01:00" }
       ]
     },
 
     "Asia": {
       "defaultTimeZone": "Asia/Seoul",
+      "serverUtcOffset": "+09:00",
       "$status": "NO SOURCE. questlog has no boss data for this region — see $regionCoverage.",
       "dailySlots": []
     }
