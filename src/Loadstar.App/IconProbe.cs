@@ -30,6 +30,13 @@ internal static class IconProbe
     /// </summary>
     private static readonly (byte B, byte G, byte R) SlotBackdrop = (0x8E, 0x3F, 0x86);
 
+    /// <summary>
+    /// The one slot identity established independently: tile ten of the reference capture holds this ring,
+    /// confirmed by comparing the cropped tile against questlog's own icon by eye. Everything about whether
+    /// a metric works is measured against it, because a ranking with no known answer in it says nothing.
+    /// </summary>
+    private const string Verified = "ring_aa_S1_004";
+
     public static async Task<int> RunAsync(string? capturePath)
     {
         using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(3) };
@@ -63,6 +70,7 @@ internal static class IconProbe
         var watch = Stopwatch.StartNew();
         var index = new IconIndex { BuiltAt = DateTimeOffset.UtcNow };
         var hashes = new Dictionary<string, IconHash>(StringComparer.Ordinal);
+        var colours = new Dictionary<string, ColourSignature>(StringComparer.Ordinal);
         var failures = 0;
 
         foreach (var group in byIcon)
@@ -82,6 +90,12 @@ internal static class IconProbe
                 // it, then flattened. Order matters: flatten first and every pixel is opaque, so there is
                 // nothing left to find the art with.
                 var raw = await ImageDecoder.DecodeAsync(bytes);
+
+                // Colour from the RAW image, before flattening: the alpha is the mask, and flattening
+                // would replace every transparent pixel with purple and put the backdrop into the
+                // histogram.
+                var colour = ColourSignature.FromAlpha(raw, raw.Bounds);
+
                 var artwork = ArtworkBounds.FromAlpha(raw);
                 var image = raw.Crop(artwork);
 
@@ -95,6 +109,7 @@ internal static class IconProbe
                 {
                     index.Add(item.Name, hash, item.EquipmentType);
                     hashes[item.Id] = hash;
+                    colours[item.Id] = colour;
                 }
             }
             catch (Exception ex)
@@ -108,10 +123,11 @@ internal static class IconProbe
             $"Hashed {hashes.Count} items in {watch.Elapsed.TotalSeconds:0.0}s ({failures} failures).");
 
         ReportSeparation(hashes);
+        ReportColourSeparation(colours);
 
         if (!string.IsNullOrWhiteSpace(capturePath))
         {
-            await MatchCaptureAsync(capturePath, index, hashes, catalog);
+            await MatchCaptureAsync(capturePath, index, hashes, colours, catalog);
         }
 
         return 0;
@@ -165,6 +181,40 @@ internal static class IconProbe
             + $"{nearest.Count(d => d <= IconIndex.DefaultTolerance)} of {nearest.Count}");
     }
 
+    /// <summary>
+    /// The same nearest-neighbour measurement for colour, so the two can be compared on equal terms.
+    /// </summary>
+    private static void ReportColourSeparation(Dictionary<string, ColourSignature> colours)
+    {
+        var distinct = colours.Values.Take(400).ToArray();
+        var nearest = new List<int>();
+
+        foreach (var probe in distinct.Take(300))
+        {
+            var best = int.MaxValue;
+
+            foreach (var other in distinct)
+            {
+                if (ReferenceEquals(other, probe))
+                {
+                    continue;
+                }
+
+                best = Math.Min(best, probe.DistanceTo(other));
+            }
+
+            nearest.Add(best);
+        }
+
+        nearest.Sort();
+
+        Console.WriteLine();
+        Console.WriteLine(
+            $"Colour signature, nearest different-icon distance (0..{ColourSignature.Total * 2}):");
+        Console.WriteLine($"  min {nearest[0]}   p5 {Pick(nearest, 0.05)}   median {Pick(nearest, 0.50)}"
+            + $"   p95 {Pick(nearest, 0.95)}   max {nearest[^1]}");
+    }
+
     private static int Pick(List<int> sorted, double quantile) =>
         sorted[Math.Clamp((int)(sorted.Count * quantile), 0, sorted.Count - 1)];
 
@@ -179,6 +229,7 @@ internal static class IconProbe
         string capturePath,
         IconIndex index,
         Dictionary<string, IconHash> hashes,
+        Dictionary<string, ColourSignature> colours,
         EquipmentCatalog catalog)
     {
         if (!File.Exists(capturePath))
@@ -227,6 +278,17 @@ internal static class IconProbe
             var hash = PerceptualHash.Compute(capture, artwork);
             var match = index.Match(hash);
 
+            // The disc region, not the artwork bbox: a histogram does not care where the pixels are, so
+            // there is nothing to gain from cropping and something to lose.
+            var captureColour = ColourSignature.FromBackdrop(capture, located2.Disc);
+
+            var byColour = colours
+                .Select(pair => (Id: pair.Key, Distance: captureColour.DistanceTo(pair.Value)))
+                .OrderBy(pair => pair.Distance)
+                .Take(3)
+                .Select(pair => $"{catalog.Find(pair.Id)?.Name ?? pair.Id} @{pair.Distance}")
+                .ToArray();
+
             // The runner-up matters more than the winner: it says whether the answer was decisive or a
             // coin toss the margin happened to allow.
             var ranked = hashes
@@ -237,8 +299,30 @@ internal static class IconProbe
                 .ToArray();
 
             Console.WriteLine($"  {slot,-9} -> {match?.Name ?? "(unidentified)"}");
-            Console.WriteLine($"            ring {located2.Ring.Width}px at {located2.Ring.X},{located2.Ring.Y}"
-                + $" -> art {region.Width}x{region.Height} -> bbox {artwork.Width}x{artwork.Height}");
+            Console.WriteLine($"            colour({captureColour.SampleCount}px): {string.Join(" | ", byColour)}");
+
+            // GROUND TRUTH, for the one slot whose identity was verified by eye against questlog's own
+            // icon: the tenth tile holds the Sacred Tree Resurrection Ring. Printing where the correct
+            // answer actually RANKS is the measurement that decides whether a metric has weak signal worth
+            // combining or no signal at all — a top-three listing cannot tell those apart.
+            if (slot == "slot10" && colours.ContainsKey(Verified))
+            {
+                var hashRank = hashes
+                    .OrderBy(pair => hash.DistanceTo(pair.Value))
+                    .Select((pair, i) => (pair.Key, Rank: i + 1))
+                    .First(pair => pair.Key == Verified);
+
+                var colourRank = colours
+                    .OrderBy(pair => captureColour.DistanceTo(pair.Value))
+                    .Select((pair, i) => (pair.Key, Rank: i + 1))
+                    .First(pair => pair.Key == Verified);
+
+                Console.WriteLine(
+                    $"            GROUND TRUTH {catalog.Find(Verified)?.Name}: "
+                    + $"hash rank {hashRank.Rank}/{hashes.Count} @{hash.DistanceTo(hashes[Verified])}bits, "
+                    + $"colour rank {colourRank.Rank}/{colours.Count} "
+                    + $"@{captureColour.DistanceTo(colours[Verified])}");
+            }
             Console.WriteLine($"            nearest: {string.Join(" | ", ranked)}");
         }
     }

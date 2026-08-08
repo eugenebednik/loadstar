@@ -77,6 +77,15 @@ public static class ArtworkBounds
     /// past where centred artwork usually reaches. Median over all of them, so the two or three that land on
     /// a wide item — a ring's band does reach the edge — cannot move the estimate.</para>
     /// </summary>
+    public static (int B, int G, int R) EstimateBackdrop(Bgra32Image image, PixelRect region)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+
+        var clipped = region.Intersect(image.Bounds);
+
+        return clipped.IsEmpty ? (0, 0, 0) : SampleBackdrop(image, clipped);
+    }
+
     private static (int B, int G, int R) SampleBackdrop(Bgra32Image image, PixelRect region)
     {
         var bs = new List<byte>();
