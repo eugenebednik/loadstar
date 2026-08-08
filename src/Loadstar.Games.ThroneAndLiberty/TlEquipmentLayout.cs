@@ -1,56 +1,79 @@
 namespace Loadstar.Games.ThroneAndLiberty;
 
 /// <summary>
-/// What kind of item each position in the character sheet's equipment grid can hold.
+/// Which slot each position in the character sheet's equipment grid is, and therefore what kind of item can
+/// be in it.
 ///
 /// <para><b>Why position is worth knowing.</b> Identifying a tile by its icon means ranking it against the
-/// catalogue, and with no constraint that means all 1,773 items — including every weapon, every piece of
-/// food and every artifact, none of which appear in this grid at all. On a real sheet that produced a pair
-/// of trousers matched into an earring slot. It also throws away correct answers: acceptance depends on the
-/// winner clearing the runner-up by a margin, and a runner-up drawn from ten times too large a pool ties
-/// far more often, so a right answer gets discarded as ambiguous.</para>
+/// catalogue, and with no constraint that means all 1,773 items — including every weapon, consumable and
+/// artifact, none of which appear in this grid at all. Unconstrained, a pair of trousers was matched into an
+/// earring slot. It also throws away correct answers: acceptance depends on the winner clearing the
+/// runner-up by a margin, and a runner-up drawn from too large a pool ties far more often, so a right answer
+/// gets discarded as ambiguous.</para>
 ///
-/// <para><b>Deliberately COARSE — armour or accessory, not the exact slot.</b> The grid's first three rows
-/// are armour and the rest accessories, which was read directly off a live sheet: head and cloak, chest and
-/// gloves, legs and boots. An exact row-and-column to slot-name mapping would be more powerful and would be
-/// guesswork — the order of necklace, bracelet, earring, belt and brooch down the lower rows has not been
-/// confirmed, and getting one wrong makes every match in that slot impossible rather than merely
-/// unconstrained. Coarse and right beats precise and wrong.</para>
+/// <para><b>The order is stated by the product owner, not inferred.</b> An earlier version of this file
+/// filtered coarsely — armour in the top rows, accessories below — precisely because the order of necklace,
+/// bracelet, earring, belt and brooch was unconfirmed, and one wrong entry makes every match in that slot
+/// impossible rather than merely unconstrained. It is confirmed now, and it immediately graded the two
+/// identifications the icon matcher had produced: the bracelet slot had matched a bracer and ring 1 had
+/// matched a ring, both correct.</para>
 ///
-/// <para>The large win is the same either way: everything that is not worn equipment is excluded, and that
-/// is most of the catalogue.</para>
+/// <para><b>Reading order is top to bottom, left to right</b>, which is the order the slot locator returns,
+/// so the position in that list is the index into <see cref="Order"/>.</para>
 /// </summary>
 public static class TlEquipmentLayout
 {
-    /// <summary>Worn armour. <c>equipmentType</c> values exactly as the catalogue spells them.</summary>
-    public static readonly IReadOnlyCollection<string> Armour =
-        ["head", "cloak", "chest", "hands", "legs", "feet"];
-
     /// <summary>
-    /// Worn accessories. One <c>ring</c> type covers both ring slots, and <c>brooch</c> belongs here because
-    /// that is how the catalogue groups it.
+    /// The thirteen slots in grid order. Values are <c>equipmentType</c> exactly as the catalogue spells
+    /// them, which is what makes them usable as a filter without translation.
     /// </summary>
-    public static readonly IReadOnlyCollection<string> Accessories =
-        ["necklace", "bracelet", "ring", "earring", "belt", "brooch"];
+    public static readonly IReadOnlyList<string> Order =
+    [
+        "head",     // 1
+        "cloak",    // 2
+        "chest",    // 3
+        "hands",    // 4  gloves
+        "legs",     // 5  trousers
+        "feet",     // 6  shoes
+        "necklace", // 7
+        "bracelet", // 8
+        "ring",     // 9  ring 1
+        "ring",     // 10 ring 2
+        "earring",  // 11
+        "belt",     // 12
+        "brooch",   // 13
+    ];
 
-    /// <summary>Everything the grid can hold — never a weapon, a consumable or an artifact.</summary>
-    public static readonly IReadOnlyCollection<string> Everything = [.. Armour, .. Accessories];
+    /// <summary>Every category the grid can hold — never a weapon, consumable or artifact.</summary>
+    public static readonly IReadOnlyCollection<string> Everything =
+        [.. Order.Distinct(StringComparer.OrdinalIgnoreCase)];
 
     /// <summary>
-    /// Rows of armour at the top of the grid, observed on a live character sheet.
-    /// </summary>
-    private const int ArmourRows = 3;
-
-    /// <summary>
-    /// The categories a tile in this grid row may hold.
+    /// The category the tile at <paramref name="index"/> holds, as a single-item collection ready to pass to
+    /// the icon matcher.
     ///
-    /// <para>An out-of-range row returns everything rather than nothing, so a detector that finds an
-    /// unexpected extra row degrades to an unconstrained search rather than to a guaranteed miss.</para>
+    /// <para>An index outside the grid returns EVERYTHING rather than nothing. That matters: if detection
+    /// ever finds a fourteenth tile, an unconstrained search still has a chance of being right, while an
+    /// empty candidate set guarantees a miss. Degrade, never fail shut.</para>
+    /// </summary>
+    public static IReadOnlyCollection<string> CategoriesForIndex(int index) =>
+        index >= 0 && index < Order.Count ? [Order[index]] : Everything;
+
+    /// <summary>
+    /// The slot name for a tile, for showing the player which slot an item was read from.
+    /// </summary>
+    public static string? SlotNameForIndex(int index) =>
+        index >= 0 && index < Order.Count ? Order[index] : null;
+
+    /// <summary>
+    /// Rows of armour at the top, kept because it is the honest fallback when only the ROW is known — a grid
+    /// whose tile count disagrees with the thirteen above cannot be indexed reliably, but its rows still
+    /// separate armour from accessories.
     /// </summary>
     public static IReadOnlyCollection<string> CategoriesForRow(int row) => row switch
     {
         < 0 => Everything,
-        < ArmourRows => Armour,
-        _ => Accessories,
+        < 3 => ["head", "cloak", "chest", "hands", "legs", "feet"],
+        _ => ["necklace", "bracelet", "ring", "earring", "belt", "brooch"],
     };
 }

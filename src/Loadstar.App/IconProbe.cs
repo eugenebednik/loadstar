@@ -345,9 +345,14 @@ internal static class IconProbe
             // measured worse than leaving it alone.
             var hash = PerceptualHash.Compute(capture, region);
 
-            // Constrained by what the slot's ROW can hold: armour in the top three rows, accessories below,
-            // and never a weapon, food or artifact, none of which appear in this grid.
-            var allowed = TlEquipmentLayout.CategoriesForRow(located2.Row);
+            // Constrained to the ONE category this slot holds, from the grid order the product owner
+            // supplied. Falls back to the row's coarse armour/accessory split when the tile count disagrees
+            // with the thirteen slots that should be there, because an index into the wrong list is worse
+            // than no index.
+            var allowed = slots.Length == TlEquipmentLayout.Order.Count
+                ? TlEquipmentLayout.CategoriesForIndex(Array.FindIndex(slots, e => e.Slot == slot))
+                : TlEquipmentLayout.CategoriesForRow(located2.Row);
+
             var match = index.MatchAcrossRenderings(hash, allowed);
 
             // The disc region, not the artwork bbox: a histogram does not care where the pixels are, so
@@ -370,7 +375,11 @@ internal static class IconProbe
                 .Select(pair => $"{catalog.Find(pair.Id)?.Name ?? pair.Id} @{pair.Distance}")
                 .ToArray();
 
-            Console.WriteLine($"  {slot,-9} -> {match?.Name ?? "(unidentified)"}");
+            var slotName = slots.Length == TlEquipmentLayout.Order.Count
+                ? TlEquipmentLayout.SlotNameForIndex(Array.FindIndex(slots, e => e.Slot == slot))
+                : null;
+
+            Console.WriteLine($"  {slot,-6} {slotName,-9} -> {match?.Name ?? "(unidentified)"}");
             Console.WriteLine($"            colour({captureColour.SampleCount}px): {string.Join(" | ", byColour)}");
 
             // GROUND TRUTH, for the one slot whose identity was verified by eye against questlog's own

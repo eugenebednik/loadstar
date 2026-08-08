@@ -828,9 +828,15 @@ internal sealed class TrayApplication : IDisposable
     {
         var weapons = settings.Game.LastWeapons;
 
-        // Already offered once. Asking again every capture is worse than never asking, so the fetch
-        // is skipped too — no point paying for a request whose only use has expired.
-        if (weapons.Count != 2 || settings.Game.BuildOfferShown)
+        // FETCHED WHENEVER NO BUILD IS PINNED, which is a deliberate change. It used to stop once the
+        // one-time offer had been shown, on the reasoning that a tool which asks the same setup question
+        // every capture is worse than one that never asks.
+        //
+        // That reasoning was about NAGGING and it is still right — the prompt still says to offer once and
+        // then drop it. But it was suppressing the DATA as well as the offer, so a player who had dismissed
+        // the prompt once could never afterwards ask "what should I be building towards" and get an answer.
+        // Suggesting builds on request is the whole point of having no target be acceptable.
+        if (weapons.Count != 2)
         {
             return [];
         }

@@ -424,4 +424,36 @@ public sealed record BuildCandidate
     public bool IsPvp => Tags.Any(t => t.Equals("pvp", StringComparison.OrdinalIgnoreCase));
 
     public bool IsPve => Tags.Any(t => t.Equals("pve", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// The role the author says this build plays, or null when they did not say.
+    ///
+    /// <para><b>Read from the tags rather than from a table of what each class can do.</b> That table would
+    /// have to be invented — there are 45 weapon pairs and no published roster of their roles — and this
+    /// project's own rule is that a plausible invented fact is worse than an admitted gap. The tags are
+    /// empirical and current instead, and they reproduce the game accurately: bow+wand returns healer and
+    /// dps, sword+gauntlet returns tank and dps, dagger+greatsword returns dps with no healer or tank at
+    /// all. Which is exactly right — that pair is DPS-only.</para>
+    ///
+    /// <para>Unmoderated, so a role indicates the author's intent rather than proving it.</para>
+    /// </summary>
+    public string? Role =>
+        Has("healer") ? "healer"
+        : Has("tank") ? "tank"
+        : Has("support") ? "support"
+        : Has("dps") ? "dps"
+        : null;
+
+    /// <summary>
+    /// Updated within the last 31 days.
+    ///
+    /// <para>The signal that matters most for trust. A build written for a previous patch can still carry
+    /// hundreds of lifetime likes, and this game rewrote its whole item system in 4.0.0 — so recency
+    /// outranks popularity when they disagree. In practice most are recent: of 36 builds fetched per weapon
+    /// pair, 28 to 32 had been touched inside a month.</para>
+    /// </summary>
+    public bool IsRecent =>
+        UpdatedAt is { } when && DateTimeOffset.UtcNow - when <= TimeSpan.FromDays(31);
+
+    private bool Has(string tag) => Tags.Any(t => t.Equals(tag, StringComparison.OrdinalIgnoreCase));
 }
