@@ -23,11 +23,12 @@
       Releases land on even minors purely as a consequence; nothing depends on the parity itself.
 
       History, as a worked example of the rule: 0.1.x development -> released v0.2.0 -> 0.3.x
-      development, which reached 0.3.31 -> released v0.4.0 -> 0.5.x development, which is this line.
+      development, which reached 0.3.31 -> released v0.4.0 -> 0.5.x development, which reached 0.5.45
+      -> released v0.6.0 -> 0.7.x development, which is this line.
       A tagged build ignores this value entirely (CI passes -p:Version from the tag), so the only job
       it has is to keep rolling builds ahead of the last release and clear of the next one.
     -->
-    <Version>0.5.0</Version>
+    <Version>0.7.0</Version>
   </PropertyGroup>
 
 </Project>
