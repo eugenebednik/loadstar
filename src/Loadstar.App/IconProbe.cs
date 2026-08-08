@@ -324,7 +324,7 @@ internal static class IconProbe
         }
 
         var slots = located
-            .Select((region, i) => (Slot: $"slot{i + 1}", Region: region))
+            .Select(region => (Slot: $"r{region.Row}c{region.Column}", Region: region))
             .ToArray();
 
         foreach (var (slot, located2) in slots)
@@ -344,7 +344,11 @@ internal static class IconProbe
             // The tile as the game drew it, disc and all. No bounding-box crop: two attempts at one both
             // measured worse than leaving it alone.
             var hash = PerceptualHash.Compute(capture, region);
-            var match = index.MatchAcrossRenderings(hash);
+
+            // Constrained by what the slot's ROW can hold: armour in the top three rows, accessories below,
+            // and never a weapon, food or artifact, none of which appear in this grid.
+            var allowed = TlEquipmentLayout.CategoriesForRow(located2.Row);
+            var match = index.MatchAcrossRenderings(hash, allowed);
 
             // The disc region, not the artwork bbox: a histogram does not care where the pixels are, so
             // there is nothing to gain from cropping and something to lose.
@@ -373,7 +377,7 @@ internal static class IconProbe
             // icon: the tenth tile holds the Sacred Tree Resurrection Ring. Printing where the correct
             // answer actually RANKS is the measurement that decides whether a metric has weak signal worth
             // combining or no signal at all — a top-three listing cannot tell those apart.
-            if (slot == "slot10" && colours.ContainsKey(Verified))
+            if (slot == "r4c0" && colours.ContainsKey(Verified))
             {
                 var hashRank = hashes
                     .OrderBy(pair => hash.DistanceTo(pair.Value))

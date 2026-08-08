@@ -145,8 +145,18 @@ public sealed class IconIndex
     /// two DIFFERENT items with near-equal distance still resolve to null, because the index genuinely
     /// cannot tell them apart and naming one would be a guess.</para>
     /// </summary>
+    /// <param name="categories">
+    /// Entry categories worth considering, or null for all of them.
+    ///
+    /// <para><b>This is a precision AND a recall control, which is not obvious.</b> Precision, because a
+    /// pair of trousers was matched into an earring slot purely because nothing ruled it out. Recall,
+    /// because acceptance rests on the winner clearing the runner-up by a margin — and while every one of
+    /// 1,773 items competes for every tile, the runner-up is drawn from a pool ten times larger than the
+    /// plausible one, so near-ties are far likelier and correct answers get discarded as ambiguous.</para>
+    /// </param>
     public IconMatch? MatchAcrossRenderings(
         IconHash hash,
+        IReadOnlyCollection<string>? categories = null,
         int margin = CrossRenderingMargin,
         int ceiling = CrossRenderingCeiling)
     {
@@ -155,7 +165,18 @@ public sealed class IconIndex
             return null;
         }
 
-        var ranked = _entries
+        var candidates = categories is null || categories.Count == 0
+            ? _entries
+            : _entries
+                .Where(entry => entry.Category is not null && categories.Contains(entry.Category))
+                .ToList();
+
+        if (candidates.Count == 0)
+        {
+            return null;
+        }
+
+        var ranked = candidates
             .Select(entry => (Entry: entry, Distance: hash.DistanceTo(entry.Hash)))
             .OrderBy(pair => pair.Distance)
             .ToArray();

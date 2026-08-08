@@ -98,15 +98,111 @@ public static class EquipmentSlotLocator
             return [];
         }
 
-        // Reading order: top to bottom, then left to right within a row. Rows are banded by half a slot
-        // height so the two columns of one row stay together even when a pixel apart vertically.
-        var band = Math.Max(1, best[0].Height / 2);
+        return FitGrid(best);
+    }
 
-        return best
-            .OrderBy(r => r.Y / band)
-            .ThenBy(r => r.X)
-            .Select(Describe)
+    /// <summary>
+    /// Keeps only the circles that lie on a two-column grid, and labels each with its row and column.
+    ///
+    /// <para><b>Two jobs at once, and the second is why this exists.</b> Detection on a real sheet found a
+    /// ring outside the equipment panel — same size, same colours, genuinely circular, just somewhere else
+    /// entirely. Size clustering cannot reject it because it IS the right size. Grid membership can: the
+    /// equipment slots share two x positions and a constant vertical pitch, and a stray does not.</para>
+    ///
+    /// <para>And a labelled position is what makes a category filter possible at all. Which slot a tile is
+    /// tells you what KIND of item can be in it, which removes most of the catalogue from contention — a
+    /// pair of trousers was matched into an earring slot precisely because nothing ruled it out.</para>
+    /// </summary>
+    private static IReadOnlyList<SlotRegion> FitGrid(List<PixelRect> rings)
+    {
+        var slotWidth = rings[0].Width;
+        var tolerance = Math.Max(3, slotWidth / 6);
+
+        // THE TWO MOST POPULOUS x positions, not the widest gap between them. Splitting at the widest gap
+        // was tried and a single stray circle destroyed it: a false positive at x=503 sat 1,152px from the
+        // real columns at 1,655 and 1,793, so the widest gap fell either side of the OUTLIER and the split
+        // put one stray in one column and both real columns in the other. Detection went from 14 slots to 8.
+        //
+        // Population is immune to that. A grid column holds several slots; a stray holds one.
+        var columns = new List<List<int>>();
+
+        foreach (var x in rings.Select(r => r.X).OrderBy(x => x))
+        {
+            var bucket = columns.FirstOrDefault(c => Math.Abs(c[0] - x) <= tolerance);
+
+            if (bucket is null)
+            {
+                columns.Add([x]);
+            }
+            else
+            {
+                bucket.Add(x);
+            }
+        }
+
+        if (columns.Count < 2)
+        {
+            return [];
+        }
+
+        var ordered = columns
+            .OrderByDescending(c => c.Count)
+            .Take(2)
+            .OrderBy(c => c[0])
             .ToArray();
+
+        // Two columns each holding a single slot is not a grid; it is two strays that happen to align.
+        if (ordered[0].Count + ordered[1].Count < MinimumSlots)
+        {
+            return [];
+        }
+
+        var leftCentre = Median(ordered[0].ToArray());
+        var rightCentre = Median(ordered[1].ToArray());
+
+        var onGrid = rings
+            .Select(r => (
+                Ring: r,
+                Column: Math.Abs(r.X - leftCentre) <= tolerance ? 0
+                    : Math.Abs(r.X - rightCentre) <= tolerance ? 1
+                    : -1))
+            .Where(entry => entry.Column >= 0)
+            .OrderBy(entry => entry.Ring.Y)
+            .ToList();
+
+        if (onGrid.Count < MinimumSlots)
+        {
+            return [];
+        }
+
+        // Rows banded by half a slot height, so the two columns of one row stay together even when a pixel
+        // apart vertically.
+        var band = Math.Max(1, slotWidth / 2);
+        var rows = new List<int>();
+        var row = 0;
+
+        for (var i = 0; i < onGrid.Count; i++)
+        {
+            if (i > 0 && onGrid[i].Ring.Y - onGrid[i - 1].Ring.Y > band)
+            {
+                row++;
+            }
+
+            rows.Add(row);
+        }
+
+        return onGrid
+            .Select((entry, i) => Describe(entry.Ring, rows[i], entry.Column))
+            .OrderBy(slot => slot.Row)
+            .ThenBy(slot => slot.Column)
+            .ToArray();
+    }
+
+    private static int Median(int[] values)
+    {
+        Array.Sort(values);
+
+        return values[values.Length / 2];
     }
 
     /// <summary>
@@ -117,7 +213,7 @@ public static class EquipmentSlotLocator
     /// the ring is a second non-backdrop colour touching the crop edges, so the artwork bounding box grew
     /// to the whole tile and every slot came back unidentified at near-noise distances.</para>
     /// </summary>
-    private static SlotRegion Describe(PixelRect ring)
+    private static SlotRegion Describe(PixelRect ring, int row, int column)
     {
         // A twelfth of the diameter, from the measured ~6px rim on a ~114px slot, plus its dark outline.
         var rim = Math.Max(2, ring.Width / 12);
@@ -150,7 +246,9 @@ public static class EquipmentSlotLocator
                 disc.X + ((disc.Width - sideX) / 2),
                 disc.Y + ((disc.Height - sideY) / 2),
                 sideX,
-                sideY));
+                sideY),
+            row,
+            column);
     }
 
     /// <summary>
@@ -273,4 +371,11 @@ public static class EquipmentSlotLocator
 /// The square inscribed in the disc — the only one of the three safe to hash, because it is the only one
 /// that excludes the rim.
 /// </param>
-public readonly record struct SlotRegion(PixelRect Ring, PixelRect Disc, PixelRect Artwork);
+/// <param name="Row">Grid row, zero at the top.</param>
+/// <param name="Column">Grid column: 0 left, 1 right.</param>
+public readonly record struct SlotRegion(
+    PixelRect Ring,
+    PixelRect Disc,
+    PixelRect Artwork,
+    int Row,
+    int Column);
