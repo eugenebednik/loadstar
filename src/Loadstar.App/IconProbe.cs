@@ -23,12 +23,31 @@ namespace Loadstar.App;
 internal static class IconProbe
 {
     /// <summary>
-    /// The purple the game draws behind an equipment icon, sampled from a real character sheet.
-    ///
-    /// <para>Transparent icon pixels are flattened onto this so the questlog copy and the in-game copy
-    /// agree everywhere the artwork is absent — which is most of a tile.</para>
+    /// The purple the game draws behind an equipment icon, sampled from a real character sheet. What was
+    /// transparent in questlog's art is flattened onto it so both sides share a background.
     /// </summary>
     private static readonly (byte B, byte G, byte R) SlotBackdrop = (0x8E, 0x3F, 0x86);
+
+    /// <summary>Composites transparent pixels onto the tile colour, in place.</summary>
+    private static void Flatten(Bgra32Image image, (byte B, byte G, byte R) background)
+    {
+        for (var i = 0; i < image.Pixels.Length; i += Bgra32Image.BytesPerPixel)
+        {
+            var alpha = image.Pixels[i + 3];
+
+            if (alpha == 255)
+            {
+                continue;
+            }
+
+            var inverse = 255 - alpha;
+
+            image.Pixels[i] = (byte)(((image.Pixels[i] * alpha) + (background.B * inverse)) / 255);
+            image.Pixels[i + 1] = (byte)(((image.Pixels[i + 1] * alpha) + (background.G * inverse)) / 255);
+            image.Pixels[i + 2] = (byte)(((image.Pixels[i + 2] * alpha) + (background.R * inverse)) / 255);
+            image.Pixels[i + 3] = 255;
+        }
+    }
 
     /// <summary>
     /// The one slot identity established independently: tile ten of the reference capture holds this ring,
@@ -90,16 +109,20 @@ internal static class IconProbe
                 // it, then flattened. Order matters: flatten first and every pixel is opaque, so there is
                 // nothing left to find the art with.
                 var raw = await ImageDecoder.DecodeAsync(bytes);
-
-                // Colour from the RAW image, before flattening: the alpha is the mask, and flattening
-                // would replace every transparent pixel with purple and put the backdrop into the
-                // histogram.
                 var colour = ColourSignature.FromAlpha(raw, raw.Bounds);
 
-                var artwork = ArtworkBounds.FromAlpha(raw);
-                var image = raw.Crop(artwork);
+                // THE CONFIGURATION THAT MEASURED BEST, and it is not the obvious one. Crop to the artwork
+                // and flatten what was transparent onto THE GAME'S DISC COLOUR, then compare against the
+                // game's tile untouched.
+                //
+                // Isolating the artwork on both sides and flattening both onto a neutral grey was tried and
+                // measured WORSE — the verified item fell from rank 1 at 71 bits to rank 3 at 86. Matching
+                // the two BACKGROUNDS turns out to matter more than removing them: the segmentation is never
+                // identical on the two sides, so a neutral fill puts a different silhouette boundary into
+                // each hash, while a shared purple leaves the same one in both.
+                var image = raw.Crop(ArtworkBounds.FromAlpha(raw));
 
-                FlattenOpaque(image, SlotBackdrop);
+                Flatten(image, SlotBackdrop);
 
                 var hash = PerceptualHash.Compute(image);
 
@@ -274,9 +297,10 @@ internal static class IconProbe
             // The tile is mostly rarity disc and bronze ring; only the art can be compared. FromBackdrop
             // samples the disc colour from the corners, so it adapts to the rarity rather than assuming
             // purple.
-            var artwork = ArtworkBounds.FromBackdrop(capture, region);
-            var hash = PerceptualHash.Compute(capture, artwork);
-            var match = index.Match(hash);
+            // The tile as the game drew it, disc and all. No bounding-box crop: two attempts at one both
+            // measured worse than leaving it alone.
+            var hash = PerceptualHash.Compute(capture, region);
+            var match = index.MatchAcrossRenderings(hash);
 
             // The disc region, not the artwork bbox: a histogram does not care where the pixels are, so
             // there is nothing to gain from cropping and something to lose.
@@ -324,32 +348,6 @@ internal static class IconProbe
                     + $"@{captureColour.DistanceTo(colours[Verified])}");
             }
             Console.WriteLine($"            nearest: {string.Join(" | ", ranked)}");
-        }
-    }
-
-    /// <summary>
-    /// Composites transparent pixels onto the tile colour, after the artwork has been located.
-    ///
-    /// <para>A duplicate of what ImageDecoder can do inline, needed here only because the crop has to
-    /// happen between decoding and flattening.</para>
-    /// </summary>
-    private static void FlattenOpaque(Bgra32Image image, (byte B, byte G, byte R) background)
-    {
-        for (var i = 0; i < image.Pixels.Length; i += Bgra32Image.BytesPerPixel)
-        {
-            var alpha = image.Pixels[i + 3];
-
-            if (alpha == 255)
-            {
-                continue;
-            }
-
-            var inverse = 255 - alpha;
-
-            image.Pixels[i] = (byte)(((image.Pixels[i] * alpha) + (background.B * inverse)) / 255);
-            image.Pixels[i + 1] = (byte)(((image.Pixels[i + 1] * alpha) + (background.G * inverse)) / 255);
-            image.Pixels[i + 2] = (byte)(((image.Pixels[i + 2] * alpha) + (background.R * inverse)) / 255);
-            image.Pixels[i + 3] = 255;
         }
     }
 

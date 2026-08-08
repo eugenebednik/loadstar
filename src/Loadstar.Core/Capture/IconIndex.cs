@@ -113,6 +113,72 @@ public sealed class IconIndex
     }
 
     /// <summary>
+    /// Fewest bits a winner must beat the runner-up by when the two images come from DIFFERENT renderings.
+    ///
+    /// <para><b>Measured.</b> On a real character sheet the one tile whose item was verified independently
+    /// beat its runner-up by 29 bits, while all thirteen others had margins of 0-4 with tied nearest
+    /// neighbours — the signature of noise. 12 sits in that gap.</para>
+    /// </summary>
+    public const int CrossRenderingMargin = 12;
+
+    /// <summary>
+    /// Absolute ceiling for a cross-rendering match. Well above <see cref="DefaultTolerance"/> because the
+    /// two images are genuinely different renderings; a 256-bit hash averages 128 bits apart by chance, so
+    /// this only rules out answers no better than a coin toss.
+    /// </summary>
+    public const int CrossRenderingCeiling = 110;
+
+    /// <summary>
+    /// Resolves a hash whose image was rendered by something OTHER than the source of the index.
+    ///
+    /// <para><b>Why this exists rather than a looser tolerance on <see cref="Match"/>.</b> Match's 20-bit
+    /// tolerance is right for its original job, where the index and the query are both drawn by the game and
+    /// differ only in size. Matching questlog's published art against a screen capture is a different
+    /// problem: the art is framed differently, so the absolute distance is several times larger while the
+    /// RANKING stays correct. Measured on a verified tile, the right item ranked 1st of 1,773 at 71 bits —
+    /// an answer the absolute rule threw away.</para>
+    ///
+    /// <para>So acceptance rests on the margin, which is scale-free: is the winner clearly ahead of the next
+    /// candidate. The ceiling only excludes chance-level answers.</para>
+    ///
+    /// <para>Entries sharing a name are not treated as rivals — the catalogue lists some items twice — but
+    /// two DIFFERENT items with near-equal distance still resolve to null, because the index genuinely
+    /// cannot tell them apart and naming one would be a guess.</para>
+    /// </summary>
+    public IconMatch? MatchAcrossRenderings(
+        IconHash hash,
+        int margin = CrossRenderingMargin,
+        int ceiling = CrossRenderingCeiling)
+    {
+        if (_entries.Count == 0)
+        {
+            return null;
+        }
+
+        var ranked = _entries
+            .Select(entry => (Entry: entry, Distance: hash.DistanceTo(entry.Hash)))
+            .OrderBy(pair => pair.Distance)
+            .ToArray();
+
+        var best = ranked[0];
+
+        if (best.Distance > ceiling)
+        {
+            return null;
+        }
+
+        var rival = ranked.FirstOrDefault(pair =>
+            !string.Equals(pair.Entry.Name, best.Entry.Name, StringComparison.OrdinalIgnoreCase));
+
+        if (rival.Entry is not null && rival.Distance - best.Distance < margin)
+        {
+            return null;
+        }
+
+        return new IconMatch(best.Entry.Name, best.Distance, best.Entry.Category);
+    }
+
+    /// <summary>
     /// Entries whose hashes are too close to distinguish, found at build time.
     ///
     /// <para>Worth surfacing when the index is created rather than discovering it later as silent
