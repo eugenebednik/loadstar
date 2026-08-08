@@ -166,6 +166,26 @@ public class EquipmentSlotLocatorTests
         }
     }
 
+    /// <summary>
+    /// The hashed square is centred on BOTH axes. Deriving the vertical inset from the width was a real bug:
+    /// tiles are only approximately square, so it pushed the crop off-centre vertically. Fixing it took
+    /// confident identifications on a real capture from one to three.
+    /// </summary>
+    [Fact]
+    public void TheArtworkSquareIsCentredOnBothAxes()
+    {
+        foreach (var slot in EquipmentSlotLocator.Locate(SheetWithSlots(600, 900, radius: 30, rows: 6)))
+        {
+            var leftGap = slot.Artwork.X - slot.Disc.X;
+            var rightGap = slot.Disc.Right - slot.Artwork.Right;
+            var topGap = slot.Artwork.Y - slot.Disc.Y;
+            var bottomGap = slot.Disc.Bottom - slot.Artwork.Bottom;
+
+            Assert.True(Math.Abs(leftGap - rightGap) <= 1, $"horizontal {leftGap} vs {rightGap}");
+            Assert.True(Math.Abs(topGap - bottomGap) <= 1, $"vertical {topGap} vs {bottomGap}");
+        }
+    }
+
     /// <summary>Reading order, so slot N means the same thing on every capture.</summary>
     [Fact]
     public void SlotsComeBackTopToBottomThenLeftToRight()

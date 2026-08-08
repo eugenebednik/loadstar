@@ -28,6 +28,45 @@ internal static class IconProbe
     /// </summary>
     private static readonly (byte B, byte G, byte R) SlotBackdrop = (0x8E, 0x3F, 0x86);
 
+    /// <summary>
+    /// Centres an image in a larger frame filled with the tile colour, adding <paramref name="percent"/> of
+    /// its size as margin on every side.
+    ///
+    /// <para><b>This is the axis none of the earlier attempts controlled.</b> PerceptualHash resamples
+    /// whatever region it is handed into a fixed 17x16 grid, so RESIZING an image does not change its hash at
+    /// all — the two renderings were never disagreeing about pixel size. What they disagree about is how much
+    /// of the frame the artwork occupies: questlog's asset is cropped tight to the art, the game's tile has
+    /// disc margin all round it. Padding one to match the other is the only thing that moves that.</para>
+    /// </summary>
+    private static Bgra32Image Pad(Bgra32Image image, int percent, (byte B, byte G, byte R) background)
+    {
+        if (percent <= 0)
+        {
+            return image;
+        }
+
+        var marginX = image.Width * percent / 100;
+        var marginY = image.Height * percent / 100;
+        var width = image.Width + (marginX * 2);
+        var height = image.Height + (marginY * 2);
+        var stride = width * Bgra32Image.BytesPerPixel;
+        var padded = new Bgra32Image(new byte[stride * height], width, height, stride);
+
+        padded.Fill(padded.Bounds, background.B, background.G, background.R, 255);
+
+        for (var y = 0; y < image.Height; y++)
+        {
+            Array.Copy(
+                image.Pixels,
+                y * image.Stride,
+                padded.Pixels,
+                ((y + marginY) * stride) + (marginX * Bgra32Image.BytesPerPixel),
+                image.Width * Bgra32Image.BytesPerPixel);
+        }
+
+        return padded;
+    }
+
     /// <summary>Composites transparent pixels onto the tile colour, in place.</summary>
     private static void Flatten(Bgra32Image image, (byte B, byte G, byte R) background)
     {
@@ -147,6 +186,11 @@ internal static class IconProbe
 
         ReportSeparation(hashes);
         ReportColourSeparation(colours);
+
+        if (!string.IsNullOrWhiteSpace(capturePath) && File.Exists(capturePath))
+        {
+            await SweepPaddingAsync(capturePath, byIcon, cacheDirectory, http, catalog);
+        }
 
         if (!string.IsNullOrWhiteSpace(capturePath))
         {
@@ -348,6 +392,135 @@ internal static class IconProbe
                     + $"@{captureColour.DistanceTo(colours[Verified])}");
             }
             Console.WriteLine($"            nearest: {string.Join(" | ", ranked)}");
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds the index at several padding values and reports what each is worth.
+    ///
+    /// <para>Two numbers per setting, and the second is the honest one. The verified tile's RANK is the
+    /// direct measurement but there is only one of it, so tuning on it alone would be fitting a parameter to
+    /// a single sample. CONFIDENT MATCHES across all fourteen tiles is the corroboration: a wrong padding
+    /// cannot produce many winners that each clear the margin, because noise ties.</para>
+    /// </summary>
+    private static async Task SweepPaddingAsync(
+        string capturePath,
+        IGrouping<string, CatalogItem>[] byIcon,
+        string cacheDirectory,
+        HttpClient http,
+        EquipmentCatalog catalog)
+    {
+        var capture = await ImageDecoder.DecodeAsync(await File.ReadAllBytesAsync(capturePath));
+        var tiles = EquipmentSlotLocator.Locate(capture)
+            .Select(slot => PerceptualHash.Compute(capture, slot.Artwork))
+            .ToArray();
+
+        // THE CAPTURE CROP, swept first, because the padding sweep below established that the index side is
+        // already framed correctly: 0% padding was optimal and every increase made it monotonically worse.
+        // So if the two still disagree about framing, the disagreement is on this side.
+        var located = EquipmentSlotLocator.Locate(capture);
+        var flatIndex = new IconIndex();
+        var flatHashes = new Dictionary<string, IconHash>(StringComparer.Ordinal);
+
+        foreach (var group in byIcon)
+        {
+            var bytes0 = await LoadAsync(http, group.Key, cacheDirectory);
+
+            if (bytes0 is null)
+            {
+                continue;
+            }
+
+            var raw0 = await ImageDecoder.DecodeAsync(bytes0);
+            var art0 = raw0.Crop(ArtworkBounds.FromAlpha(raw0));
+
+            Flatten(art0, SlotBackdrop);
+
+            var hash0 = PerceptualHash.Compute(art0);
+
+            foreach (var item in group)
+            {
+                flatIndex.Add(item.Name, hash0, item.EquipmentType);
+                flatHashes[item.Id] = hash0;
+            }
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Capture-crop sweep — fraction of the disc diameter that is hashed:");
+        Console.WriteLine("  crop  verified rank  bits  margin   confident matches / 14");
+
+        foreach (var fraction in (double[])[0.50, 0.58, 0.65, 0.707, 0.78, 0.86, 0.94, 1.00])
+        {
+            var cropped = located.Select(slot =>
+            {
+                var side = Math.Max(1, (int)(slot.Disc.Width * fraction));
+                var insetX = (slot.Disc.Width - side) / 2;
+                var sideY = Math.Max(1, (int)(slot.Disc.Height * fraction));
+                var insetY = (slot.Disc.Height - sideY) / 2;
+
+                return PerceptualHash.Compute(
+                    capture,
+                    new PixelRect(slot.Disc.X + insetX, slot.Disc.Y + insetY, side, sideY));
+            }).ToArray();
+
+            var confidentCount = cropped.Count(t => flatIndex.MatchAcrossRenderings(t) is not null);
+            var probe = cropped.Length > 9 ? cropped[9] : cropped[0];
+            var order = flatHashes
+                .Select(pair => (pair.Key, Distance: probe.DistanceTo(pair.Value)))
+                .OrderBy(pair => pair.Distance)
+                .ToArray();
+            var verifiedRank = Array.FindIndex(order, pair => pair.Key == Verified) + 1;
+
+            Console.WriteLine(
+                $"  {fraction,4:0.00}  {verifiedRank,11}   {probe.DistanceTo(flatHashes[Verified]),4}"
+                + $"  {order[1].Distance - order[0].Distance,6}   {confidentCount,3}");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Padding sweep — questlog art padded to match the tile's margin:");
+        Console.WriteLine("  pad   verified rank  bits  margin   confident matches / 14");
+
+        foreach (var percent in (int[])[0, 5, 10, 15, 20, 25, 30, 40])
+        {
+            var index = new IconIndex();
+            var hashes = new Dictionary<string, IconHash>(StringComparer.Ordinal);
+
+            foreach (var group in byIcon)
+            {
+                var bytes = await LoadAsync(http, group.Key, cacheDirectory);
+
+                if (bytes is null)
+                {
+                    continue;
+                }
+
+                var raw = await ImageDecoder.DecodeAsync(bytes);
+                var art = raw.Crop(ArtworkBounds.FromAlpha(raw));
+
+                Flatten(art, SlotBackdrop);
+
+                var hash = PerceptualHash.Compute(Pad(art, percent, SlotBackdrop));
+
+                foreach (var item in group)
+                {
+                    index.Add(item.Name, hash, item.EquipmentType);
+                    hashes[item.Id] = hash;
+                }
+            }
+
+            var confident = tiles.Count(t => index.MatchAcrossRenderings(t) is not null);
+
+            var verifiedTile = tiles.Length > 9 ? tiles[9] : tiles[0];
+            var ranked = hashes
+                .Select(pair => (pair.Key, Distance: verifiedTile.DistanceTo(pair.Value)))
+                .OrderBy(pair => pair.Distance)
+                .ToArray();
+            var rank = Array.FindIndex(ranked, pair => pair.Key == Verified) + 1;
+            var margin = ranked.Length > 1 ? ranked[1].Distance - ranked[0].Distance : 0;
+
+            Console.WriteLine(
+                $"  {percent,3}%   {rank,11}   {verifiedTile.DistanceTo(hashes[Verified]),4}"
+                + $"  {margin,6}   {confident,3}");
         }
     }
 
