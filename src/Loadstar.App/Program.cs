@@ -37,6 +37,37 @@ internal static class Program
             return;
         }
 
+        // --slots runs ONLY equipment-slot localisation over one or more images and prints the geometry.
+        // Separate from --icon-probe so the resolution question can be answered without rebuilding the
+        // whole icon index each time.
+        if (args.Contains("--slots", StringComparer.OrdinalIgnoreCase))
+        {
+            var store0 = new Core.Configuration.SettingsStore();
+            Core.Diagnostics.Log.Initialize(store0.Directory);
+
+            foreach (var path in args.Where(a => !a.StartsWith("--", StringComparison.Ordinal)))
+            {
+                try
+                {
+                    var image = Capture.Windows.ImageDecoder
+                        .DecodeAsync(File.ReadAllBytes(path)).GetAwaiter().GetResult();
+                    var found = Core.Capture.EquipmentSlotLocator.Locate(image);
+                    var ring = found.Count > 0 ? found[0].Ring.Width : 0;
+                    var columns = found.Select(s => s.Ring.X).Distinct().Count();
+
+                    Console.WriteLine(
+                        $"{image.Width,5}x{image.Height,-5} slots={found.Count,3}  ring={ring,4}px"
+                        + $"  columns={columns}  {Path.GetFileName(path)}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"  {Path.GetFileName(path)}: {ex.GetType().Name} {ex.Message}");
+                }
+            }
+
+            return;
+        }
+
         // --icon-probe measures whether local icon identification works, against the real catalogue and a
         // real capture. See IconProbe: the thresholds it tests were calibrated on synthetic icons and the
         // code that owns them asks in writing to be re-measured on real ones.

@@ -65,34 +65,45 @@ public static class ArtworkBounds
     }
 
     /// <summary>
-    /// Estimates the tile background from the pixels nearest its corners.
+    /// Estimates the tile background by sampling a ring of points around the artwork.
     ///
-    /// <para>The corners are chosen because the artwork is centred: a disc inscribed in a square leaves the
-    /// corners as background under every rarity, and the artwork never reaches them. Median rather than
-    /// mean, so the bronze ring clipping one corner cannot drag the estimate.</para>
+    /// <para><b>Not the bounding box's corners, which was the first attempt and was wrong.</b> An equipment
+    /// tile is a CIRCLE inscribed in the region, so its corners are the rim and the dark outline outside the
+    /// disc, not the disc. Sampling them returned the rim colour, every purple pixel then read as
+    /// not-background, and the bounding box grew to the whole tile — the same silent no-op that had already
+    /// been diagnosed once from the other direction.</para>
+    ///
+    /// <para>Eight points at 0.78 of the half-width, on the axes and the diagonals: inside the disc, out
+    /// past where centred artwork usually reaches. Median over all of them, so the two or three that land on
+    /// a wide item — a ring's band does reach the edge — cannot move the estimate.</para>
     /// </summary>
     private static (int B, int G, int R) SampleBackdrop(Bgra32Image image, PixelRect region)
     {
-        var inset = Math.Max(1, Math.Min(region.Width, region.Height) / 10);
         var bs = new List<byte>();
         var gs = new List<byte>();
         var rs = new List<byte>();
 
+        var cx = region.X + (region.Width / 2);
+        var cy = region.Y + (region.Height / 2);
+        var rx = (int)(region.Width / 2 * 0.78);
+        var ry = (int)(region.Height / 2 * 0.78);
+        var diagX = (int)(rx * 0.707);
+        var diagY = (int)(ry * 0.707);
+
         (int X, int Y)[] corners =
         [
-            (region.X + inset, region.Y + inset),
-            (region.Right - inset - 1, region.Y + inset),
-            (region.X + inset, region.Bottom - inset - 1),
-            (region.Right - inset - 1, region.Bottom - inset - 1),
+            (cx - rx, cy), (cx + rx, cy), (cx, cy - ry), (cx, cy + ry),
+            (cx - diagX, cy - diagY), (cx + diagX, cy - diagY),
+            (cx - diagX, cy + diagY), (cx + diagX, cy + diagY),
         ];
 
-        foreach (var (cx, cy) in corners)
+        foreach (var (px, py) in corners)
         {
             // A small patch per corner rather than a single pixel, so noise and gradient banding average
             // out before the median sees them.
-            for (var y = cy - 1; y <= cy + 1; y++)
+            for (var y = py - 1; y <= py + 1; y++)
             {
-                for (var x = cx - 1; x <= cx + 1; x++)
+                for (var x = px - 1; x <= px + 1; x++)
                 {
                     if (x < 0 || y < 0 || x >= image.Width || y >= image.Height)
                     {

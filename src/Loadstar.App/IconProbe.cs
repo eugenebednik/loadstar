@@ -192,26 +192,27 @@ internal static class IconProbe
 
         Console.WriteLine($"\nCapture {capture.Width}x{capture.Height}: {capturePath}");
 
-        // Measured off a 2560x1600 character sheet. The artwork sits inside the ring, so these crop the
-        // inner disc and leave the bronze border and the level badge out of the hash.
-        (string Slot, PixelRect Region)[] slots =
-        [
-            ("head",     new PixelRect(1678, 205, 84, 84)),
-            ("cloak",    new PixelRect(1808, 205, 84, 84)),
-            ("chest",    new PixelRect(1678, 335, 84, 84)),
-            ("gloves",   new PixelRect(1808, 335, 84, 84)),
-            ("legs",     new PixelRect(1678, 465, 84, 84)),
-            ("boots",    new PixelRect(1808, 465, 84, 84)),
-            ("necklace", new PixelRect(1678, 592, 84, 84)),
-            ("bracelet", new PixelRect(1808, 592, 84, 84)),
-            ("ring1",    new PixelRect(1678, 700, 84, 84)),
-            ("ring2",    new PixelRect(1808, 700, 84, 84)),
-            ("earring",  new PixelRect(1678, 808, 84, 84)),
-            ("belt",     new PixelRect(1808, 808, 84, 84)),
-        ];
+        // DETECTED, not measured. See EquipmentSlotLocator: hand-measured rectangles were wrong on the
+        // capture they were measured from and would be wrong on any other resolution.
+        var located = EquipmentSlotLocator.Locate(capture);
 
-        foreach (var (slot, region) in slots)
+        Console.WriteLine($"Detected {located.Count} equipment slots.");
+
+        if (located.Count == 0)
         {
+            Console.WriteLine("  No slot grid found — treated as 'not the character sheet'.");
+
+            return;
+        }
+
+        var slots = located
+            .Select((region, i) => (Slot: $"slot{i + 1}", Region: region))
+            .ToArray();
+
+        foreach (var (slot, located2) in slots)
+        {
+            var region = located2.Artwork;
+
             if (region.Intersect(capture.Bounds).IsEmpty)
             {
                 Console.WriteLine($"  {slot,-9} region outside the capture");
@@ -236,11 +237,8 @@ internal static class IconProbe
                 .ToArray();
 
             Console.WriteLine($"  {slot,-9} -> {match?.Name ?? "(unidentified)"}");
-            Console.WriteLine($"            region {region.Width}x{region.Height} -> artwork bbox "
-                + $"{artwork.Width}x{artwork.Height} at +{artwork.X - region.X},+{artwork.Y - region.Y}"
-                + (artwork.Width >= region.Width && artwork.Height >= region.Height
-                    ? "   <-- NO CROP: the whole tile read as artwork"
-                    : string.Empty));
+            Console.WriteLine($"            ring {located2.Ring.Width}px at {located2.Ring.X},{located2.Ring.Y}"
+                + $" -> art {region.Width}x{region.Height} -> bbox {artwork.Width}x{artwork.Height}");
             Console.WriteLine($"            nearest: {string.Join(" | ", ranked)}");
         }
     }
