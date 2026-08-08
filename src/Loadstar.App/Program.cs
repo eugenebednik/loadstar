@@ -37,6 +37,23 @@ internal static class Program
             return;
         }
 
+        // --icon-probe measures whether local icon identification works, against the real catalogue and a
+        // real capture. See IconProbe: the thresholds it tests were calibrated on synthetic icons and the
+        // code that owns them asks in writing to be re-measured on real ones.
+        if (args.Contains("--icon-probe", StringComparer.OrdinalIgnoreCase))
+        {
+            var store = new Core.Configuration.SettingsStore();
+            Core.Diagnostics.Log.Initialize(store.Directory);
+
+            var capture = args.SkipWhile(a => !a.Equals("--icon-probe", StringComparison.OrdinalIgnoreCase))
+                .Skip(1)
+                .FirstOrDefault(a => !a.StartsWith("--", StringComparison.Ordinal));
+
+            Environment.ExitCode = IconProbe.RunAsync(capture).GetAwaiter().GetResult();
+
+            return;
+        }
+
         // --ask opens the ask dialog with synthetic screens, for the same reason --settings exists: the
         // multi-screen layout cannot be checked without four captures and a running game, and "ask the
         // user to test it" is a slow way to find out a panel did not render. Takes a count so one, two,
