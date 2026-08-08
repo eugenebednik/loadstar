@@ -84,6 +84,19 @@ internal sealed class SettingsWindow : ThemedForm
     /// </summary>
     private bool _loadingServers;
     private readonly ThemedCheckBox _consent = new() { Text = Strings.Get("settings.consent") };
+
+    private readonly ThemedCheckBox _startWithWindows = new() { Text = Strings.Get("settings.startWithWindows") };
+
+    /// <summary>
+    /// Autostart, read from and written to the Run key rather than settings.json.
+    ///
+    /// <para>The registry entry is the setting; see <see cref="Core.Startup.StartupRegistration"/> for why a stored copy
+    /// would drift. The practical consequence here is that the checkbox is populated from a registry read
+    /// each time the dialog opens, so it stays honest when the user turns the entry off from Task
+    /// Manager.</para>
+    /// </summary>
+    private readonly Core.Startup.StartupRegistration _startup =
+        new(new RunKeyStartupKey(), Environment.ProcessPath);
     private readonly ComboBox _language = new() { Width = 240, DropDownStyle = ComboBoxStyle.DropDownList };
 
     private readonly ComboBox _server = new() { Width = 240, DropDownStyle = ComboBoxStyle.DropDownList };
@@ -421,6 +434,8 @@ internal sealed class SettingsWindow : ThemedForm
         Row(grid, string.Empty, _keyLink);
         Row(grid, Strings.Get("settings.language"), _language);
         Row(grid, string.Empty, _consent);
+        Row(grid, string.Empty, _startWithWindows);
+        Row(grid, string.Empty, Hint("settings.hint.startWithWindows"));
         Row(grid, string.Empty, _status);
 
         page.Controls.Add(grid);
@@ -708,6 +723,12 @@ internal sealed class SettingsWindow : ThemedForm
         _hotkey.Text = settings.Overlay.CaptureHotkey;
         _consent.Checked = settings.CaptureConsentGiven;
 
+        // From the REGISTRY, so an entry the user removed outside the app shows as off here. Disabled
+        // outright when there is no process path to register, because a checkbox that cannot do anything
+        // should not look like it can.
+        _startWithWindows.Checked = _startup.IsEnabled();
+        _startWithWindows.Enabled = _startup.IsSupported || _startWithWindows.Checked;
+
         // Remember every provider's model before touching the combo, so switching provider and back
         // returns to what the user actually chose rather than to that provider's default.
         foreach (var (kind, model) in settings.Ai.ModelByProvider)
@@ -860,6 +881,20 @@ internal sealed class SettingsWindow : ThemedForm
 
         _modelChoices[provider] = model;
 
+        // Applied BEFORE the settings write and reported afterwards, so a policy-blocked registry write
+        // cannot silently look like it worked. Deliberately not a reason to abandon the save: the other
+        // settings on this dialog are unrelated and the user should not lose them because autostart is
+        // locked down on their machine.
+        var startupWanted = _startWithWindows.Checked;
+        var startupChanged = startupWanted != _startup.IsEnabled();
+        var startupFailed = startupChanged && !_startup.Set(startupWanted);
+
+        if (startupFailed)
+        {
+            // Put the checkbox back to the truth rather than leaving it showing what was asked for.
+            _startWithWindows.Checked = _startup.IsEnabled();
+        }
+
         _store.Save(settings with
         {
             Language = language,
@@ -905,6 +940,23 @@ internal sealed class SettingsWindow : ThemedForm
             // Into the selected provider's slot, never a shared one. Saving a Gemini key over an
             // Anthropic one would fail authentication later with nothing on screen explaining why.
             _secrets.Save(provider, _apiKey.Text.Trim());
+        }
+
+        // Said out loud, and only on failure. Everything else on this dialog has already been saved, so a
+        // status line would vanish with the closing window — and the one thing a user must not be left
+        // believing is that autostart is on when it is not. This only fires on a machine where policy
+        // denies the write, which is rare enough to be worth a dialog.
+        if (startupFailed)
+        {
+            Core.Diagnostics.Log.Warn(
+                $"Autostart: could not {(startupWanted ? "register" : "remove")} the Run entry.");
+
+            MessageBox.Show(
+                this,
+                Strings.Get("st.startupFailed"),
+                "Loadstar",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
         }
 
         if (languageChanged)

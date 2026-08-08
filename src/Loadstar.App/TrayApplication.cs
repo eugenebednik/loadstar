@@ -140,6 +140,16 @@ internal sealed class TrayApplication : IDisposable
         _hotkeys = new HotkeyHost();
         RegisterHotkeys();
 
+        // Repairs an autostart entry left pointing at a previous install location. Only rewrites when one
+        // already exists, so it can never turn the feature on by itself — see StartupRegistration for why
+        // the alternative fails so quietly: the checkbox keeps reading "on" and the app simply stops
+        // starting.
+        if (new Core.Startup.StartupRegistration(new RunKeyStartupKey(), Environment.ProcessPath).Synchronise())
+        {
+            Core.Diagnostics.Log.Info(
+                $"Autostart: entry pointed elsewhere, repointed at {Environment.ProcessPath}.");
+        }
+
         _bossTimer = new BossTimerService(_store.Load, _store.Save, (title, body) => ShowBalloon(title, body), _store.Directory);
 
         // Reminds the user of the hotkey when the game starts, the way an overlay does. Process
