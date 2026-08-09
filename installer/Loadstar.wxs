@@ -90,25 +90,67 @@
 
     <!--
       Hands the per-user leftovers back to the app, which is the only thing that can reach them. See
-      UninstallCleanup for why the installer cannot do this itself in a perMachine package.
+      UninstallCleanup for what it removes and why the package cannot do it directly.
 
-      Execute="immediate" with Impersonate="yes", NOT deferred. Deferred is the usual advice because it runs
-      elevated, but elevation is exactly what must be avoided here: an elevated action runs as the installing
-      account and would clean the wrong profile. Nothing being removed needs admin rights — it is the
-      invoking user's own hive and their own AppData.
+      DEFERRED, and that is the whole trick. The rule is the opposite of what it sounds like:
+
+        - Execute="immediate" runs in whichever process is walking the sequence. For a perMachine package
+          that is the SERVER process, which is LocalSystem. An earlier version of this action was immediate
+          with Impersonate="yes", which reads like it would run as the user and does not — verified against
+          a real uninstall log, where it appeared as `MSI (s) ... RemoveUserData ... Return value 1`. It
+          "succeeded" against SYSTEM's own registry hive and SYSTEM's own AppData, so it deleted nothing and
+          reported success, and the user's autostart entry and API key were both still there afterwards.
+
+        - Execute="deferred" WITHOUT NoImpersonate impersonates the user who started the install. That is
+          the documented behaviour and the only way to reach their HKCU and their profile.
+
+      So deferred is not about elevation here — it is the only route to the correct user context.
+
+      THE COMMAND LINE ARRIVES IN A PROPERTY, which is the second thing this action got wrong before. A
+      deferred action cannot resolve properties: formatted fields like [INSTALLFOLDER] are never expanded for
+      one, only CustomActionData is. So both obvious spellings fail —
+
+        - putting [INSTALLFOLDER] straight in the command line passes the literal brackets through; and
+        - naming the executable relatively, with Directory="INSTALLFOLDER", fails with error 1721. MSI does
+          resolve the directory (the log showed Source=C:\Program Files\Loadstar\) but CreateProcess looks a
+          bare executable name up against the CALLING process's directory, not the working directory it was
+          handed, so nothing is found. Return="ignore" then swallows it and the uninstall reports success.
+
+      SetProperty below runs as an ordinary immediate action, where [INSTALLFOLDER] IS expanded, and stores
+      the result in a property named the same as this action. MSI resolves that property when it writes the
+      deferred action into the script, so what lands there is a full absolute path.
+
+      THE PROPERTY HOLDS THE EXECUTABLE ONLY, and the arguments stay in ExeCommand. MSI joins the two itself.
+      Putting the whole command line in the property also fails with 1721, and the log says precisely why:
+      it logged the whole string as the `location` and left `command` empty, so it looked for a program whose
+      filename contained the flag.
+
+      Unquoted, despite the space in "Program Files": this field is a path, not a command line, and MSI quotes
+      it when building the process. A quoted value becomes part of the filename it searches for.
 
       Return="ignore" so a failure to tidy up can never fail an uninstall.
     -->
     <CustomAction Id="RemoveUserData"
-                  Directory="INSTALLFOLDER"
-                  ExeCommand="&quot;[INSTALLFOLDER]Loadstar.exe&quot; --uninstall-cleanup"
-                  Execute="immediate"
+                  Property="RemoveUserData"
+                  ExeCommand="--uninstall-cleanup"
+                  Execute="deferred"
                   Impersonate="yes"
                   Return="ignore" />
+
+    <!-- Same condition as the action it feeds: no point building a command line for something that will
+         not run, and SetProperty on an uninstall-only path should not fire during an upgrade either. -->
+    <SetProperty Id="RemoveUserData"
+                 Value="[INSTALLFOLDER]Loadstar.exe"
+                 Before="RemoveUserData"
+                 Sequence="execute"
+                 Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
 
     <InstallExecuteSequence>
       <!--
         Before RemoveFiles, because the executable being invoked is one of the files about to be deleted.
+        A deferred action is written into the installation script at its sequence position, so scheduling it
+        here puts it ahead of RemoveFiles' own operations when the script executes, not merely ahead of them
+        during the planning pass.
 
         The condition is what keeps an update from wiping settings. REMOVE="ALL" alone is true during a
         MajorUpgrade as well, since that works by uninstalling the old package — so on every version bump

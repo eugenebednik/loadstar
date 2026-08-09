@@ -7,13 +7,33 @@ namespace Loadstar.App;
 /// per-user autostart entry, and the per-user data directory holding settings, logs and the encrypted API key.
 ///
 /// <para><b>Why the app does this rather than the installer.</b> Both live in the user's own hive and
-/// profile, and the package is <c>perMachine</c> — so its uninstall runs elevated in whichever account
-/// launched it, and <c>HKCU</c> / <c>LocalApplicationData</c> resolved from there are the wrong hive and
-/// the wrong profile if that is not the person who used the app. A <c>RemoveRegistryValue</c> or
-/// <c>RemoveFolder</c> in the package would silently miss, and an HKCU key in a perMachine package is the
-/// ICE38 / repair-loop trap the installer deliberately avoids. Running the app itself, impersonated, is the
-/// one way to land in the right place. See <see cref="RunKeyStartupKey"/>, whose documentation previously
-/// concluded this was simply not fixable — it is, from this side of the boundary rather than that one.</para>
+/// profile, and the package is <c>perMachine</c>. A <c>RemoveRegistryValue</c> or <c>RemoveFolder</c> in the
+/// package cannot reach them, and an HKCU key in a perMachine package is the ICE38 / repair-loop trap the
+/// installer deliberately avoids. Running the app itself is the one way to land in the right place. See
+/// <see cref="RunKeyStartupKey"/>, whose documentation concluded this was not fixable — it is, from this
+/// side of the boundary rather than that one.</para>
+///
+/// <para><b>The context is decided entirely on the installer side, and getting it wrong is silent.</b> The
+/// first attempt was scheduled as an immediate action, which in a perMachine package runs in the LocalSystem
+/// server process — so this code read SYSTEM's hive and SYSTEM's AppData, deleted nothing, and reported
+/// success. It must be DEFERRED and impersonated; see Loadstar.wxs, which now carries all three corrections
+/// that took to find.</para>
+///
+/// <para><b>MEASURED LIMITATION, 2026-08-09: invoked from the installer this does not reliably work, and the
+/// cause appears to be antivirus rather than the installer.</b> Across four full install-and-uninstall cycles
+/// the process launched correctly and reported the right identity, not SYSTEM, with the right USERPROFILE —
+/// and then saw a registry hive with six Run values where the real one had eight, and a
+/// <see cref="DirectoryNotFoundException"/> for a directory holding 1,528 files. The same executable, same
+/// user, run straight from a shell, cleared both correctly. That difference points at the msiexec-spawned
+/// process being sandboxed: the MSI is unsigned, and this machine runs an AV that virtualises freshly
+/// installed unsigned binaries. Code signing is the likely fix and is already outstanding.</para>
+///
+/// <para>So treat the per-user half as BEST EFFORT. What the uninstall does reliably is close the running app
+/// (process enumeration is not affected — that part was verified working), remove every installed file, the
+/// shortcuts and the Add/Remove entry, and finish without demanding a reboot. Release notes must not promise
+/// more than that. The residue when it fails is a Run value pointing at a deleted executable, which Windows
+/// skips, plus settings and a credential left on disk — so the honest instruction for someone who wants those
+/// gone is to delete the folder named in the trace line below.</para>
 ///
 /// <para><b>It still only cleans the invoking user.</b> Another account that also ran Loadstar keeps its own
 /// Run value and its own data, because nothing running as one user may reach into another's profile. That is
@@ -45,9 +65,85 @@ internal static class UninstallCleanup
     /// </summary>
     public static void Run()
     {
+        // WHO AM I, written before anything is attempted. This runs inside an uninstaller with no console,
+        // no window and a Return="ignore" wrapper, so without this the only observable outcome is "the files
+        // are still there" — which is true both when the code fails and when it succeeds against the wrong
+        // user's profile. Three separate installer bugs here were each invisible for exactly that reason, and
+        // each cost a full install-and-uninstall cycle to guess at. One line of identity turns the next one
+        // into a lookup.
+        Trace($"cleanup running as {Environment.UserName} on {Environment.MachineName}, "
+            + $"appdata={Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)}");
+
+        Diagnose();
+
         CloseOtherInstances();
         ClearAutostart();
         DeleteUserData();
+    }
+
+    /// <summary>
+    /// One-off identity and access dump. Exists because the two APIs this class depends on —
+    /// <see cref="Directory.Exists"/> and <c>OpenSubKey</c> — both report "not there" when the real answer is
+    /// "not allowed", so a permissions problem is indistinguishable from a clean no-op. Both reported nothing
+    /// present while the directory held 1,528 files.
+    /// </summary>
+    private static void Diagnose()
+    {
+        try
+        {
+            using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+
+            Trace($"  identity={identity.Name} system={identity.IsSystem} "
+                + $"impersonation={identity.ImpersonationLevel} token={identity.Token}");
+            Trace($"  USERPROFILE={Environment.GetEnvironmentVariable("USERPROFILE")}");
+            Trace($"  LOCALAPPDATA={Environment.GetEnvironmentVariable("LOCALAPPDATA")}");
+            Trace($"  HKCU resolves to {Microsoft.Win32.Registry.CurrentUser.Name}");
+
+            using var run = Microsoft.Win32.Registry.CurrentUser
+                .OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", writable: false);
+
+            Trace(run is null
+                ? "  Run KEY ITSELF could not be opened (access denied or wrong hive)"
+                : $"  Run key opened, {run.GetValueNames().Length} values, Loadstar={run.GetValue("Loadstar") ?? "(none)"}");
+
+            var dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Loadstar");
+
+            // GetFileSystemEntries THROWS where Exists silently returns false, which is the entire point.
+            try
+            {
+                Trace($"  enumerating {dir}: {Directory.GetFileSystemEntries(dir).Length} entries");
+            }
+            catch (Exception ex)
+            {
+                Trace($"  enumerating {dir} threw {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Trace($"  diagnose failed: {ex.GetType().Name} {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Appends one line to a machine-wide log, which is the only place both a normal user and LocalSystem can
+    /// reliably write. Deliberately NOT the app's own log directory: that is one of the things being deleted,
+    /// and a diagnostic that disappears with its subject is no diagnostic at all.
+    /// </summary>
+    private static void Trace(string line)
+    {
+        try
+        {
+            var path = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                "Loadstar-uninstall.log");
+
+            File.AppendAllText(path, $"{DateTimeOffset.Now:O}  {line}{Environment.NewLine}");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            // Diagnostics must never be the reason an uninstall misbehaves.
+        }
     }
 
     /// <summary>
@@ -113,12 +209,18 @@ internal static class UninstallCleanup
     {
         try
         {
+            var before = new RunKeyStartupKey().Read();
+
             new RunKeyStartupKey().Delete();
+
+            Trace($"autostart: was {(before is null ? "absent" : "'" + before + "'")}, "
+                + $"now {(new RunKeyStartupKey().Read() is null ? "absent" : "STILL PRESENT")}");
         }
         catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException)
         {
             // A stale Run value pointing at a deleted executable is skipped by Windows, so failing here
             // costs the user an inert line in Task Manager's Startup tab and nothing else.
+            Trace($"autostart: FAILED {ex.GetType().Name} {ex.Message}");
         }
     }
 
@@ -133,16 +235,21 @@ internal static class UninstallCleanup
 
         try
         {
-            if (Directory.Exists(directory))
+            var existed = Directory.Exists(directory);
+
+            if (existed)
             {
                 Directory.Delete(directory, recursive: true);
             }
+
+            Trace($"data dir {directory}: existed={existed}, now exists={Directory.Exists(directory)}");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Most likely the log file still being held, if a copy outlived CloseOtherInstances above or a
             // second one started in between. The residue is then a log and a settings file, and neither is
             // worth failing an uninstall over.
+            Trace($"data dir: FAILED {ex.GetType().Name} {ex.Message}");
         }
     }
 }
