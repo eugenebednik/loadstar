@@ -133,6 +133,13 @@ public sealed class KnowledgeTrimTests
     ///
     /// <para>The no-build case stays the other tight one: it carries every class profile AND the candidate
     /// builds, so it is dense even though it has the least information in it.</para>
+    ///
+    /// <para><b>What this test CANNOT see, recorded so the number is not lost.</b> None of these cases loads
+    /// the real 1,773-item catalogue, so none of them includes the per-item capability lines that ship with a
+    /// pinned build. Measured against the live catalogue and the real reference build on 8 August 2026: 24,003
+    /// tokens without it and <b>24,797 with it</b>. That is inside the 25,000 tripwire by roughly 200 tokens,
+    /// which is not comfortable — the next thing added to this prompt should be measured the same way, with
+    /// <c>--icon-probe</c> or an equivalent, rather than assumed to fit.</para>
     /// </summary>
     [Fact]
     public void TheAssembledPromptStaysWithinBudget()

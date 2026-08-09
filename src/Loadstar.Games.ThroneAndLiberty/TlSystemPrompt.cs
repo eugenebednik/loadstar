@@ -860,8 +860,27 @@ public static class TlSystemPrompt
                 }
 
                 builder.AppendLine();
+
+                // What the piece COULD carry, under what it does carry. Traits are unlocked rather than
+                // rolled since 4.0.0, so an option the build has not taken is a concrete purchase on gear
+                // the player already owns.
+                var capability = TlReferenceLookup.DescribeCapability(
+                    item.ItemId, catalog, item.Traits.Keys);
+
+                if (!string.IsNullOrEmpty(capability))
+                {
+                    builder.AppendLine(capability);
+                }
             }
 
+            builder.AppendLine();
+            builder.AppendLine(
+                "Lines indented under an item are what the CATALOGUE says that piece is capable of, not what "
+                + "it currently has. A stat shown as `x→y` is its value at the item's floor level against "
+                + "its ceiling, so the headroom in that slot is the difference — and a piece whose ceiling is "
+                + "already reached cannot be raised however much is spent on it. Trait options listed as `not "
+                + "taken` are unlocked with Trait Unlock Stones and are among the cheapest real gains "
+                + "available, because they need no new drop.");
             builder.AppendLine();
             builder.AppendLine(
                 "**Where a line gives a name after the id, USE THE NAME** — the player cannot recognise " +

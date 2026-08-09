@@ -104,6 +104,41 @@ public sealed record CatalogItem
     /// <summary>Item levels this item has stats defined for. Observed range is 0 to 85.</summary>
     public IReadOnlyList<int> AvailableItemLevels { get; init; } = [];
 
+    /// <summary>
+    /// The item's own stats at its LOWEST defined level, flattened from the nested armour/weapon groups.
+    ///
+    /// <para>Floor and ceiling only, not all thirty levels. Two numbers answer the question that matters —
+    /// what this piece gives now against what it would give fully raised — while the intermediate levels are
+    /// interpolation nobody asks about and thirty times the memory.</para>
+    /// </summary>
+    public IReadOnlyDictionary<string, int> StatsAtFloor { get; init; } = new Dictionary<string, int>();
+
+    /// <summary>The same stats at its HIGHEST defined level, so the headroom is a subtraction.</summary>
+    public IReadOnlyDictionary<string, int> StatsAtCeiling { get; init; } = new Dictionary<string, int>();
+
+    /// <summary>
+    /// Every trait this item CAN carry, and the value at the last pip.
+    ///
+    /// <para><b>This is the "possible stats" of a piece and it is not visible in game without hovering.</b>
+    /// Gear drops with no traits at all since 4.0.0 — they are unlocked with stones — so the catalogue's list
+    /// is the menu, and what a build has chosen is a selection from it. The difference between the two is a
+    /// concrete, priceable action: an unlocked trait slot on a piece the player already wears.</para>
+    ///
+    /// <para>Values are the fourth and final pip, because that is the ceiling a trait can be levelled to and
+    /// therefore what a comparison should use.</para>
+    /// </summary>
+    public IReadOnlyDictionary<string, int> TraitOptions { get; init; } = new Dictionary<string, int>();
+
+    /// <summary>
+    /// Resonance options, each with the value at its top tier and the percentage chance of rolling it.
+    ///
+    /// <para>Probabilities matter here in a way they do not for traits: resonance is rolled rather than
+    /// chosen, and opening one slot costs 1,500,000 Sollant and three stones. Advice that names a resonance
+    /// without its odds is advice about a lottery presented as a purchase.</para>
+    /// </summary>
+    public IReadOnlyDictionary<string, ResonanceOption> ResonanceOptions { get; init; }
+        = new Dictionary<string, ResonanceOption>();
+
     public int? MaxItemLevel => AvailableItemLevels.Count > 0 ? AvailableItemLevels[^1] : null;
 
     /// <summary>
@@ -162,6 +197,8 @@ public sealed record CatalogItem
             return null;
         }
 
+        var levels = ReadItemLevels(element);
+
         return new CatalogItem
         {
             Id = id,
@@ -177,7 +214,11 @@ public sealed record CatalogItem
             Icon = element.TryGetProperty("icon", out var icon) && icon.ValueKind == JsonValueKind.String
                 ? icon.GetString()
                 : null,
-            AvailableItemLevels = ReadItemLevels(element),
+            AvailableItemLevels = levels,
+            StatsAtFloor = ReadStatsAt(element, levels.Count > 0 ? levels[0] : null),
+            StatsAtCeiling = ReadStatsAt(element, levels.Count > 0 ? levels[^1] : null),
+            TraitOptions = ReadTraitOptions(element),
+            ResonanceOptions = ReadResonanceOptions(element),
             SourceToken = ExtractSourceToken(id),
         };
     }
@@ -201,6 +242,147 @@ public sealed record CatalogItem
             .Where(level => level >= 0)
             .OrderBy(level => level)
             .ToArray();
+    }
+
+    /// <summary>
+    /// The item's stats at one level, flattened.
+    ///
+    /// <para><c>main</c> nests its values under <c>armor</c>, <c>extra</c>, <c>shield</c>, <c>offhand</c> and
+    /// <c>mainhand</c>, most of which are null on any given item, while a sibling <c>extra</c> block is keyed
+    /// by level directly. Both are folded into one flat map, because a caller wants the piece's stats and not
+    /// a tour of the payload's shape.</para>
+    /// </summary>
+    private static IReadOnlyDictionary<string, int> ReadStatsAt(JsonElement element, int? level)
+    {
+        var stats = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        if (level is null
+            || !element.TryGetProperty("itemStats", out var itemStats)
+            || itemStats.ValueKind != JsonValueKind.Object)
+        {
+            return stats;
+        }
+
+        var key = level.Value.ToString();
+
+        if (itemStats.TryGetProperty("main", out var main)
+            && main.ValueKind == JsonValueKind.Object
+            && main.TryGetProperty(key, out var atLevel)
+            && atLevel.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var group in atLevel.EnumerateObject())
+            {
+                if (group.Value.ValueKind == JsonValueKind.Object)
+                {
+                    Absorb(stats, group.Value);
+                }
+            }
+        }
+
+        if (itemStats.TryGetProperty("extra", out var extra)
+            && extra.ValueKind == JsonValueKind.Object
+            && extra.TryGetProperty(key, out var extraAtLevel)
+            && extraAtLevel.ValueKind == JsonValueKind.Object)
+        {
+            Absorb(stats, extraAtLevel);
+        }
+
+        return stats;
+    }
+
+    private static void Absorb(Dictionary<string, int> into, JsonElement source)
+    {
+        foreach (var stat in source.EnumerateObject())
+        {
+            if (stat.Value.ValueKind == JsonValueKind.Number && stat.Value.TryGetInt32(out var value))
+            {
+                into[stat.Name] = value;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Every trait the item can carry, valued at its final pip.
+    ///
+    /// <para><c>itemStats.traits</c> is a stat id to an ascending array of four pip values. The last one is
+    /// the ceiling, which is what a comparison against a target build should use — a trait at one pip is the
+    /// same trait, part-levelled.</para>
+    /// </summary>
+    private static IReadOnlyDictionary<string, int> ReadTraitOptions(JsonElement element)
+    {
+        var options = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        if (!element.TryGetProperty("itemStats", out var itemStats)
+            || itemStats.ValueKind != JsonValueKind.Object
+            || !itemStats.TryGetProperty("traits", out var traits)
+            || traits.ValueKind != JsonValueKind.Object)
+        {
+            return options;
+        }
+
+        foreach (var trait in traits.EnumerateObject())
+        {
+            if (trait.Value.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            var pips = trait.Value.EnumerateArray()
+                .Where(v => v.ValueKind == JsonValueKind.Number)
+                .Select(v => v.TryGetInt32(out var pip) ? pip : 0)
+                .ToArray();
+
+            if (pips.Length > 0)
+            {
+                options[trait.Name] = pips[^1];
+            }
+        }
+
+        return options;
+    }
+
+    /// <summary>Resonance options with their top tier and roll chance.</summary>
+    private static IReadOnlyDictionary<string, ResonanceOption> ReadResonanceOptions(JsonElement element)
+    {
+        var options = new Dictionary<string, ResonanceOption>(StringComparer.OrdinalIgnoreCase);
+
+        if (!element.TryGetProperty("itemStats", out var itemStats)
+            || itemStats.ValueKind != JsonValueKind.Object
+            || !itemStats.TryGetProperty("resonance", out var resonance)
+            || resonance.ValueKind != JsonValueKind.Object)
+        {
+            return options;
+        }
+
+        foreach (var entry in resonance.EnumerateObject())
+        {
+            if (entry.Value.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var top = 0;
+
+            if (entry.Value.TryGetProperty("tiers", out var tiers) && tiers.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var tier in tiers.EnumerateArray())
+                {
+                    if (tier.ValueKind == JsonValueKind.Number && tier.TryGetInt32(out var value))
+                    {
+                        top = value;
+                    }
+                }
+            }
+
+            var probability = entry.Value.TryGetProperty("probability", out var chance)
+                && chance.TryGetInt32(out var percent)
+                ? percent
+                : 0;
+
+            options[entry.Name] = new ResonanceOption(top, probability);
+        }
+
+        return options;
     }
 
     /// <summary>
@@ -228,6 +410,11 @@ public sealed record CatalogItem
 /// How hard an item is estimated to be to obtain. Inferred, never stated as fact — see
 /// <see cref="CatalogItem.Acquisition"/>.
 /// </summary>
+/// <summary>One resonance choice: the value at its highest tier, and the chance of rolling it.</summary>
+/// <param name="TopTier">Value at the fourth and final tier.</param>
+/// <param name="ProbabilityPercent">Chance of this stat appearing, as a whole percentage.</param>
+public readonly record struct ResonanceOption(int TopTier, int ProbabilityPercent);
+
 public enum AcquisitionEstimate
 {
     Unknown = 0,

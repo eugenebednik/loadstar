@@ -75,6 +75,83 @@ public static class TlReferenceLookup
     ///
     /// <para>Food reports level 0, which means nothing, so it is suppressed rather than printed.</para>
     /// </summary>
+    /// <summary>
+    /// What a piece is capable of, beyond what the build has chosen for it.
+    ///
+    /// <para><b>The gap between the two is the actionable part.</b> Since 4.0.0 gear drops with NO traits and
+    /// they are unlocked with stones, so the catalogue's trait list is the menu and the build's list is a
+    /// selection from it. Naming the options a piece still has turns "your gear is fine" into a specific,
+    /// priceable next action on equipment the player already wears.</para>
+    ///
+    /// <para>Also carries the stat range — what the piece gives at its floor against its ceiling — so the
+    /// headroom in a slot is a subtraction rather than a guess. That matters most for the pieces this game
+    /// caps early: a weapon that stops at item level 50 cannot be raised however much is spent.</para>
+    ///
+    /// <para><b>Only the traits the build has NOT taken, and at most four of them.</b> Both halves are budget
+    /// decisions with a correctness benefit. Naming the ones already chosen is noise — they are listed on the
+    /// line above — and computing the real set difference is both shorter and more accurate than a count. The
+    /// cap exists because this line repeats for 27 items: the unabridged version put the assembled prompt at
+    /// ~25,300 tokens against a 25,000 tripwire, which is the point at which the model measurably gets worse
+    /// at the rules that matter.</para>
+    ///
+    /// <para>Values are omitted for the same reason. The names are what let the model ask for the tooltip
+    /// that carries the numbers.</para>
+    /// </summary>
+    public static string DescribeCapability(
+        string? itemId,
+        EquipmentCatalog? catalog,
+        IEnumerable<string>? chosenTraits = null)
+    {
+        if (catalog is null || string.IsNullOrWhiteSpace(itemId))
+        {
+            return string.Empty;
+        }
+
+        var item = catalog.Find(itemId);
+
+        if (item is null)
+        {
+            return string.Empty;
+        }
+
+        var parts = new List<string>();
+
+        // The primary defensive or offensive number, floor to ceiling. One stat, chosen as the largest,
+        // because listing every stat per item is what the budget cannot afford.
+        if (item.StatsAtFloor.Count > 0 && item.StatsAtCeiling.Count > 0)
+        {
+            var headline = item.StatsAtCeiling.OrderByDescending(pair => pair.Value).First();
+
+            if (item.StatsAtFloor.TryGetValue(headline.Key, out var floor) && floor != headline.Value)
+            {
+                parts.Add($"{headline.Key} {floor}→{headline.Value}");
+            }
+        }
+
+        // The genuine set difference, not a subtraction of counts. A build can carry a trait the catalogue
+        // does not list for that piece — heroic picks come from a different field — so counting would
+        // under-report the options while naming cannot.
+        var taken = new HashSet<string>(chosenTraits ?? [], StringComparer.OrdinalIgnoreCase);
+        var spare = item.TraitOptions.Keys.Where(name => !taken.Contains(name)).ToArray();
+
+        if (item.TraitOptions.Count > 0)
+        {
+            if (spare.Length == 0)
+            {
+                parts.Add($"all {item.TraitOptions.Count} trait options taken");
+            }
+            else
+            {
+                var listed = string.Join(", ", spare.Take(4));
+                var rest = spare.Length > 4 ? $" +{spare.Length - 4}" : string.Empty;
+
+                parts.Add($"{spare.Length} of {item.TraitOptions.Count} traits free: {listed}{rest}");
+            }
+        }
+
+        return parts.Count == 0 ? string.Empty : "      " + string.Join(" | ", parts);
+    }
+
     private static string? DescribeLevels(CatalogItem item)
     {
         var levels = item.AvailableItemLevels;
