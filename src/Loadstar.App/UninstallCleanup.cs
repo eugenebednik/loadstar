@@ -1,8 +1,10 @@
+using System.Diagnostics;
+
 namespace Loadstar.App;
 
 /// <summary>
-/// Removes the two things an MSI uninstall cannot reach by itself: the per-user autostart entry, and the
-/// per-user data directory holding settings, logs and the encrypted API key.
+/// Ends the running tray copy, then removes the two things an MSI uninstall cannot reach by itself: the
+/// per-user autostart entry, and the per-user data directory holding settings, logs and the encrypted API key.
 ///
 /// <para><b>Why the app does this rather than the installer.</b> Both live in the user's own hive and
 /// profile, and the package is <c>perMachine</c> — so its uninstall runs elevated in whichever account
@@ -37,10 +39,74 @@ internal static class UninstallCleanup
     /// </summary>
     public const string Flag = "--uninstall-cleanup";
 
+    /// <summary>
+    /// Order is load-bearing: the tray copy holds an open handle on the log inside the directory that is
+    /// about to be deleted, so it has to go first or the delete fails on the one file guaranteed to be open.
+    /// </summary>
     public static void Run()
     {
+        CloseOtherInstances();
         ClearAutostart();
         DeleteUserData();
+    }
+
+    /// <summary>
+    /// Ends any other running Loadstar, so the uninstall is not deleting files out from under a live process.
+    ///
+    /// <para><b>Why this is here rather than left to the installer's CloseApplication.</b> The MSI does carry
+    /// <c>util:CloseApplication</c>, and the extension schedules it before <c>InstallFiles</c> — correct for
+    /// an upgrade, where the files are being overwritten. On an UNINSTALL the deletions happen in
+    /// <c>RemoveFiles</c>, which the built MSI sequences at 3500, while CloseApplications lands at 3999. So
+    /// the app would be closed five hundred steps after its own executable was deleted, and the files-in-use
+    /// prompt this was supposed to prevent would appear anyway. Verified by reading InstallExecuteSequence
+    /// out of the built package, not assumed.</para>
+    ///
+    /// <para>This runs from an immediate custom action sequenced at 3499, and the immediate pass completes
+    /// in full before any file operation in the script executes — so by the time anything is deleted, this
+    /// has already finished. Loadstar is tray-resident and therefore running at essentially every uninstall,
+    /// which is what makes it worth being careful about.</para>
+    /// </summary>
+    private static void CloseOtherInstances()
+    {
+        Process[] others;
+
+        try
+        {
+            others = [.. Process.GetProcessesByName("Loadstar")
+                .Where(p => p.Id != Environment.ProcessId)];
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            return;
+        }
+
+        foreach (var other in others)
+        {
+            try
+            {
+                // Asked first. The tray app has no visible window so this often does nothing, but when it
+                // does the app shuts down through its own path rather than being cut off mid-write.
+                other.CloseMainWindow();
+
+                if (!other.WaitForExit(milliseconds: 3000))
+                {
+                    // Then not asked. Nothing is lost: settings are written when a dialog is accepted, not
+                    // at exit, and the alternative is a half-removed install that needs a reboot.
+                    other.Kill();
+                    other.WaitForExit(milliseconds: 2000);
+                }
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception
+                or NotSupportedException or SystemException)
+            {
+                // Already gone, or another user's copy this account may not touch. Either way the uninstall
+                // continues — Windows Installer's own files-in-use handling is the fallback.
+            }
+            finally
+            {
+                other.Dispose();
+            }
+        }
     }
 
     private static void ClearAutostart()
@@ -74,9 +140,9 @@ internal static class UninstallCleanup
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Most likely the log file still being held, which happens if the tray copy had not finished
-            // exiting. The installer closes it first for exactly this reason; if that raced, the residue is
-            // a log and a settings file, and neither is worth failing an uninstall over.
+            // Most likely the log file still being held, if a copy outlived CloseOtherInstances above or a
+            // second one started in between. The residue is then a log and a settings file, and neither is
+            // worth failing an uninstall over.
         }
     }
 }
