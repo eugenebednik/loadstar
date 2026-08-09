@@ -33,6 +33,26 @@ internal sealed class SettingsWindow : ThemedForm
     private readonly ComboBox _model = new() { Width = 240, DropDownStyle = ComboBoxStyle.DropDown };
     private readonly TextBox _apiKey = new() { Width = 380, UseSystemPasswordChar = true };
 
+    /// <summary>
+    /// Says outright that the selected provider has no key stored.
+    ///
+    /// <para><b>Why a warning line and not just the placeholder.</b> Selecting a provider already swapped
+    /// the key field's placeholder between "key stored" and the provider's key format, and that was the only
+    /// signal — grey, subtle, easy to read as a format hint rather than a problem. Someone changed provider
+    /// by accident, saw nothing that looked wrong, and only found out when asking stopped working. A
+    /// provider with no key is a broken configuration and should look like one at the moment it is chosen.
+    /// </para>
+    ///
+    /// <para>Paired with the same gate on the ask dialog, which disables Ask and offers Settings. This is
+    /// the earlier of the two, and the better place: it is where the mistake gets made.</para>
+    /// </summary>
+    private readonly Label _keyMissing = new()
+    {
+        AutoSize = true,
+        MaximumSize = new Size(FieldWidth, 0),
+        Visible = false,
+    };
+
     // AutoSize with a width cap, rather than the fixed height used for _status. Line height scales
     // with DPI, so any height picked here is right on one display and clips the last line on
     // another — which is exactly how the "Keys:" URL went missing at 150% scaling. MaximumSize caps
@@ -429,6 +449,7 @@ internal sealed class SettingsWindow : ThemedForm
 
         Row(grid, Strings.Get("settings.provider"), _provider);
         Row(grid, Strings.Get("settings.model"), modelRow);
+        Row(grid, string.Empty, _keyMissing);
         Row(grid, Strings.Get("settings.apiKey"), _apiKey);
         Row(grid, string.Empty, _billing);
         Row(grid, string.Empty, _keyLink);
@@ -472,9 +493,22 @@ internal sealed class SettingsWindow : ThemedForm
             : info.DefaultModel;
 
         _apiKey.Clear();
-        _apiKey.PlaceholderText = _secrets.HasKey(choice.Kind)
+
+        var hasKey = _secrets.HasKey(choice.Kind);
+
+        _apiKey.PlaceholderText = hasKey
             ? Strings.Get("settings.keyStored")
             : info.KeyPlaceholder;
+
+        // Named, because a key is stored PER PROVIDER: "no API key" on a machine that has two of them
+        // stored reads as a bug rather than as a statement about the one just selected.
+        _keyMissing.Text = string.Format(Strings.Get("settings.keyMissing"), info.DisplayName);
+        _keyMissing.Visible = !hasKey;
+
+        // Assigned on every change and not once at construction: Theme.Apply forces small labels to
+        // SubtleText at OnShown, which would quietly turn this warning back into ordinary grey text. Same
+        // overwrite that erased the ask dialog's warning colour.
+        _keyMissing.ForeColor = Theme.Warning;
 
         // Explicit line breaks rather than trusting the wrap: the URL must not be split across two
         // lines, since a half-shown URL is worse than none — it looks like the whole address.
