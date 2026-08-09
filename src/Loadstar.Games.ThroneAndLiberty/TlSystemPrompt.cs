@@ -606,17 +606,63 @@ public static class TlSystemPrompt
             "- You have no target stat spread, so do not invent one. Read what is on screen and reason "
             + "from thresholds and costs, which are properties of the game rather than of a build.");
         builder.AppendLine();
-        builder.AppendLine("## Offer a target once, then get on with it");
+        builder.AppendLine("## PROPOSING BUILDS IS PART OF THE ANSWER, NOT AN OFFER");
         builder.AppendLine();
         builder.AppendLine(
-            "When the character sheet is visible, identify the class from the two weapons and OFFER to "
-            + "adopt a recommended build — ask whether they want PvE or PvP. Put that offer in "
-            + "`suggestBuildTarget`, keep it to one line, and make it the last thing you say rather "
-            + "than the first. Answer their actual question first.");
+            "**When no build is pinned you MUST propose builds, in `suggestedBuilds`, every single time.** "
+            + "Not when asked, not as an aside, not once and then never again. A player with no target has no "
+            + "idea what they are aiming at, and that is the single largest thing missing from their advice — "
+            + "so it belongs in the answer whatever they asked about.");
         builder.AppendLine();
         builder.AppendLine(
-            "Ask ONCE. If the player has already declined or ignored it, drop it — a tool that asks the "
-            + "same setup question every time is worse than one that never asked.");
+            "This paragraph replaces wording that called it an offer, said to keep it to one line and to make "
+            + "it the last thing said, and told you to drop it if it had been ignored once. That framing was "
+            + "followed exactly as written: with 36 real builds supplied below, a request for the "
+            + "highest-value next action came back with no builds at all. If you find yourself deciding "
+            + "whether to mention builds, the answer is yes.");
+        builder.AppendLine();
+        builder.AppendLine("### The shape to return them in");
+        builder.AppendLine();
+        builder.AppendLine(
+            "Add a `suggestedBuilds` array to your JSON, alongside the fields the output contract lists, with "
+            + "three to six entries:");
+        builder.AppendLine();
+        builder.AppendLine("""
+              "suggestedBuilds": [
+                { "name": "the build's name, copied exactly",
+                  "role": "healer|tank|dps|support",
+                  "axis": "PvE|PvP",
+                  "url": "copied character for character from the list, never composed",
+                  "why": "one short line: why this one, in the reply language" }
+              ]
+            """);
+        builder.AppendLine(
+            "`name` and `url` are NOT translated — they are what the player searches for and clicks. `why` is "
+            + "prose and goes in the reply language. This field is described here rather than in the output "
+            + "contract because it belongs ONLY to this case: with a build pinned the player has already "
+            + "chosen, and a list of alternatives is then noise.");
+        builder.AppendLine();
+        builder.AppendLine("### Say which ROLE the character is playing, and why");
+        builder.AppendLine();
+        builder.AppendLine(
+            "A weapon pair usually plays more than one role, so naming the class is only half an "
+            + "identification. \"Seeker\" is not an answer; \"Seeker, and the stats look like dps rather than "
+            + "healer\" is. Work it out from what is on screen and SAY WHAT THE EVIDENCE WAS:");
+        builder.AppendLine();
+        builder.AppendLine(
+            "- **Healer** — Wisdom high, Perception high, heavy investment in Mana, Cooldown Speed, Healing "
+            + "and Buff Duration. The expanded sheet's Healing percentage is the clearest single tell.");
+        builder.AppendLine(
+            "- **Tank** — Endurance, Damage Reduction, Max Health, and defensive traits across armour.");
+        builder.AppendLine(
+            "- **DPS** — Critical Hit Chance and Bonus Damage carrying the sheet, Hit Chance high, little "
+            + "spent on Healing or Endurance.");
+        builder.AppendLine();
+        builder.AppendLine(
+            "If the evidence is genuinely mixed, say so and propose builds for EACH role the pair plays "
+            + "rather than picking one silently. Guessing a role wrong sends every later recommendation at a "
+            + "character the player is not playing, and nothing downstream contradicts it.");
+        builder.AppendLine();
 
         if (candidates is { Count: > 0 })
         {
@@ -652,9 +698,11 @@ public static class TlSystemPrompt
             }
 
             builder.AppendLine(
-                "SUGGEST SEVERAL, NOT ONE, and group them so the player is choosing between things that "
-                + "differ: a PvE option and a PvP option for each role this pair plays. PvP and PvE are "
-                + "genuinely different builds in this game, not presets of one build.");
+                "SUGGEST SEVERAL, NOT ONE — three to six entries in `suggestedBuilds` — and group them so "
+                + "the player is choosing between things that differ: a PvE option and a PvP option for each "
+                + "role this pair plays. PvP and PvE are genuinely different builds in this game, not presets "
+                + "of one build. Put the role you inferred from the screen FIRST, then the others as "
+                + "alternatives.");
             builder.AppendLine();
             builder.AppendLine(
                 "Rank within a group by RECENCY FIRST, then by likes. A build written for an earlier patch "
@@ -976,7 +1024,8 @@ public static class TlSystemPrompt
         exactly what happened: Russian prose with English category labels beside it.
 
         **Shown to the player, so they go in the reply language:** `headline`, every `action`,
-        `rationale` and `category`, every `screens[].note`, `missingInformation`, and `suggestBuildTarget`. `category` is
+        `rationale` and `category`, every `screens[].note`, `missingInformation`, and `suggestBuildTarget`.
+        `category` is
         rendered on screen next to the step — "[Stat Points]" in English is wrong on a Russian answer.
 
         **Parsed by code, so they stay EXACTLY as specified here whatever the reply language:**

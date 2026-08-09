@@ -315,6 +315,26 @@ internal static class Program
             },
         ],
         MissingInformation = ["Hover a stat for its Base / Equipment / Stellar Journey split."],
+        // Exercises the no-target path: several proposals, roles and axes, real slugs.
+        SuggestedBuilds =
+        [
+            new Core.Model.SuggestedBuild
+            {
+                Name = "T4 Seeker Magic HAE/END (Aelon Bow)",
+                Role = "dps",
+                Axis = "PvP",
+                Url = "https://questlog.gg/throne-and-liberty/en/character-builder/GoldenConquestAndWriter",
+                Why = "Most-liked dps Seeker updated this month.",
+            },
+            new Core.Model.SuggestedBuild
+            {
+                Name = "Seeker PVE Healer",
+                Role = "healer",
+                Axis = "PvE",
+                Url = "https://questlog.gg/throne-and-liberty/en/character-builder/InfernalRavenousUnderTheSalvation",
+                Why = "The alternative role this weapon pair plays.",
+            },
+        ],
     };
 
     /// <summary>

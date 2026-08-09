@@ -266,6 +266,44 @@ internal sealed class ResultWindow : ThemedForm
             text.AppendLine();
         }
 
+        // BEFORE "could not see", because with no build pinned this is the most useful thing on the page:
+        // the player has nothing to aim at, and every URL here is clickable.
+        if (advice.SuggestedBuilds.Count > 0)
+        {
+            text.AppendLine(Strings.Get("result.suggestedBuilds"));
+            text.AppendLine();
+
+            foreach (var build in advice.SuggestedBuilds)
+            {
+                var labels = new[] { build.Role, build.Axis }
+                    .Where(part => !string.IsNullOrWhiteSpace(part))
+                    .ToArray();
+
+                text.Append("  ").Append(build.Name);
+
+                if (labels.Length > 0)
+                {
+                    text.Append("  (").Append(string.Join(", ", labels)).Append(')');
+                }
+
+                text.AppendLine();
+
+                if (!string.IsNullOrWhiteSpace(build.Why))
+                {
+                    text.AppendLine($"    {build.Why}");
+                }
+
+                // On its own line and unindented past the margin, so DetectUrls gets the whole URL and a
+                // long one is not broken by wrapping in the middle.
+                if (!string.IsNullOrWhiteSpace(build.Url))
+                {
+                    text.AppendLine($"    {build.Url}");
+                }
+
+                text.AppendLine();
+            }
+        }
+
         if (advice.MissingInformation.Count > 0)
         {
             text.AppendLine(Strings.Get("result.couldNotSee"));

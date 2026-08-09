@@ -46,7 +46,46 @@ public sealed record Advice
     /// </summary>
     public IReadOnlyList<string> MissingInformation { get; init; } = [];
 
+    /// <summary>
+    /// Builds the model proposed, when the player has pinned none.
+    ///
+    /// <para><b>A list rather than the single-line <c>suggestBuildTarget</c>, because one line was the bug.</b>
+    /// With no target pinned there is nothing to aim at, which is the largest gap in the advice — and the
+    /// prompt used to call proposing one an "offer", to be kept to a line and dropped if ignored. That was
+    /// followed literally: 36 real builds were supplied and an answer came back with none. A structured list
+    /// makes several proposals the normal shape, and gives the UI somewhere to put links it can render.</para>
+    ///
+    /// <para>Empty when a build IS pinned, where alternatives would be noise.</para>
+    /// </summary>
+    public IReadOnlyList<SuggestedBuild> SuggestedBuilds { get; init; } = [];
+
     public TokenUsage? Usage { get; init; }
+}
+
+/// <summary>
+/// One build the model proposes to aim at.
+/// </summary>
+public sealed record SuggestedBuild
+{
+    /// <summary>Author-supplied text, copied rather than translated: it is what the player searches for.</summary>
+    public required string Name { get; init; }
+
+    /// <summary><c>healer</c>, <c>tank</c>, <c>dps</c> or <c>support</c> — read from the build's own tags.</summary>
+    public string? Role { get; init; }
+
+    /// <summary><c>PvE</c> or <c>PvP</c>. They are different builds in this game, not presets of one.</summary>
+    public string? Axis { get; init; }
+
+    /// <summary>
+    /// The questlog URL.
+    ///
+    /// <para>Copied from the supplied list rather than composed. A made-up questlog URL 404s, and a player
+    /// following a dead link cannot tell that from the build having been deleted.</para>
+    /// </summary>
+    public string? Url { get; init; }
+
+    /// <summary>One short line on why this one, in the reply language.</summary>
+    public string? Why { get; init; }
 }
 
 /// <summary>

@@ -110,19 +110,45 @@ public sealed class TlSystemPromptTests
     }
 
     /// <summary>
-    /// The offer is a footnote, not the answer, and it only exists when there is no build. A tool that
-    /// leads with a setup question instead of answering is worse than one that never asks.
+    /// Proposing builds is REQUIRED when none is pinned, and absent when one is.
+    ///
+    /// <para><b>This test used to assert the opposite, and the thing it asserted was the bug.</b> It required
+    /// the text "Ask ONCE", from a paragraph that called proposing a build an offer, told the model to keep it
+    /// to one line, to put it last, and to drop it if it had been ignored. That was followed exactly as
+    /// written: with 36 real candidates supplied, a request for the highest-value next action came back
+    /// naming no builds at all. A test can pin a behaviour and still be pinning a mistake.</para>
     /// </summary>
     [Fact]
-    public void BuildOfferOnlyAppearsWhenNoBuildIsPinned()
+    public void ProposingBuildsIsRequiredWhenNoneIsPinned()
     {
-        Assert.Contains("suggestBuildTarget", TlSystemPrompt.Build(null, []), StringComparison.Ordinal);
-        Assert.Contains("Ask ONCE", TlSystemPrompt.Build(null, []), StringComparison.Ordinal);
+        var none = TlSystemPrompt.Build(null, []);
 
-        // With a build pinned, the offer section must not appear at all.
+        Assert.Contains("suggestedBuilds", none, StringComparison.Ordinal);
+        Assert.Contains("MUST propose builds", none, StringComparison.Ordinal);
+
+        // And the wording that suppressed it must not come back.
+        Assert.DoesNotContain("Ask ONCE", none, StringComparison.Ordinal);
+        Assert.DoesNotContain("Offer a target once", none, StringComparison.Ordinal);
+
+        // With a build pinned, none of this section appears — the player has already chosen.
         var pinned = TlSystemPrompt.Build(Sample, ["pve"]);
+
         Assert.DoesNotContain("No target build is pinned", pinned, StringComparison.Ordinal);
-        Assert.DoesNotContain("Offer a target once", pinned, StringComparison.Ordinal);
+        Assert.DoesNotContain("suggestedBuilds", pinned, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Naming the class is only half an identification, because a weapon pair usually plays more than one
+    /// role. "Seeker" is not an answer; "Seeker, and the stats read as dps rather than healer" is — and the
+    /// first was what a real answer gave.
+    /// </summary>
+    [Fact]
+    public void TheRoleMustBeIdentifiedAndEvidenced()
+    {
+        var none = TlSystemPrompt.Build(null, []);
+
+        Assert.Contains("SAY WHAT THE EVIDENCE WAS", none, StringComparison.Ordinal);
+        Assert.Contains("propose builds for EACH role", none, StringComparison.Ordinal);
     }
 
     /// <summary>

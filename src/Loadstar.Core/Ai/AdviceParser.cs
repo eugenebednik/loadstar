@@ -56,6 +56,7 @@ public static class AdviceParser
                 Headline = ReadString(root, "headline") ?? "(no headline)",
                 RecognizedScreen = ReadScreen(root),
             Screens = ReadScreens(root),
+            SuggestedBuilds = ReadSuggestedBuilds(root),
                 AnsweredFromScreen = !root.TryGetProperty("answeredFromScreen", out var answered)
                     || answered.ValueKind != JsonValueKind.False,
                 Steps = ReadSteps(root),
@@ -189,6 +190,48 @@ public static class AdviceParser
         }
 
         return readings;
+    }
+
+    /// <summary>
+    /// Reads the proposed builds. Absent yields an empty list — a model that omits the field must not break
+    /// an otherwise good answer, and the UI simply shows no proposals.
+    /// </summary>
+    private static IReadOnlyList<SuggestedBuild> ReadSuggestedBuilds(JsonElement root)
+    {
+        if (!root.TryGetProperty("suggestedBuilds", out var array) || array.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var builds = new List<SuggestedBuild>();
+
+        foreach (var entry in array.EnumerateArray())
+        {
+            if (entry.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var name = ReadString(entry, "name");
+
+            // A proposal with no name is nothing a player can act on, so it is dropped rather than rendered
+            // as a blank row.
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+
+            builds.Add(new SuggestedBuild
+            {
+                Name = name,
+                Role = ReadString(entry, "role"),
+                Axis = ReadString(entry, "axis"),
+                Url = ReadString(entry, "url"),
+                Why = ReadString(entry, "why"),
+            });
+        }
+
+        return builds;
     }
 
     private static IReadOnlyList<AdviceStep> ReadSteps(JsonElement root)
