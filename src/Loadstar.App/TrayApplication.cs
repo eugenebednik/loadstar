@@ -364,8 +364,28 @@ internal sealed class TrayApplication : IDisposable
 
         try
         {
-            // OUTER LOOP: one pass per question. A second pass happens only when the hotkey was pressed while
-            // the answer window was open, which is the player asking for a fresh capture and a fresh question.
+            // THE QUEUE, not a frame. Up to four screens travel with one question; see PendingCaptures for
+            // why four, and why the oldest goes rather than the newest bouncing.
+            var shots = new PendingCaptures();
+            string? carried = null;
+            var appending = false;
+
+            // The window title shown in the dialog. Remembered because a retry after a FAILED request does
+            // not capture again, so there is no fresh frame to read it from.
+            var windowTitle = string.Empty;
+
+            // Set when a request failed and the player should get their dialog back untouched. Skips the
+            // capture on the next pass, because the screens are already queued.
+            var reuseQueued = false;
+
+            // DECLARED OUT HERE, ABOVE THE LOOP, and that placement is load-bearing. Inside the loop they
+            // were re-initialised by every `continue` — including the one that retries after a failed
+            // request, which would have handed the ask dialog an EMPTY queue and thrown, since AskWindow
+            // requires at least one screen. The retry path needs them to survive; the "player pressed the
+            // hotkey again" path wants them cleared, and does that explicitly below.
+            //
+            // OUTER LOOP: one pass per question. A second pass happens when a request failed and is being
+            // retried, or when the hotkey was pressed while the answer window was open.
             while (true)
             {
                 var settings = _store.Load();
@@ -407,44 +427,50 @@ internal sealed class TrayApplication : IDisposable
                 // Worth the loop because the hotkey fires on whatever happens to be on screen, and a capture
                 // of the open world answers almost nothing. Before this, that cost the player the entire
                 // interaction: cancel, navigate, find the hotkey, retype the question.
-                // THE QUEUE, not a frame. Up to four screens travel with one question; see
-                // PendingCaptures for why four, and why the oldest goes rather than the newest bouncing.
-                var shots = new PendingCaptures();
                 string question;
-                string? carried = null;
-                var appending = false;
 
                 while (true)
                 {
-                    var result = await _gated.CaptureAsync(
-                        new CaptureRequest
-                        {
-                            Target = settings.Capture.ToWindowTarget(Game.DefaultProcessName, Game.DefaultWindowTitleMatch),
-                            Region = Game.FullWindow,
-                            PrivacyMasks = Game.PrivacyMasks,
-                            Label = "game window",
-                            Timeout = TimeSpan.FromSeconds(8),
-                        },
-                        CancellationToken.None);
-
-                    if (!result.Success)
+                    // The empty check is belt and braces: a reuse with nothing queued would throw inside
+                    // AskWindow, which requires at least one screen. If it ever happens, capturing is the
+                    // recoverable answer.
+                    if (reuseQueued && !shots.IsEmpty)
                     {
-                        ShowBalloon($"Capture {result.Status}", result.Detail ?? "Unknown failure.", ToolTipIcon.Warning);
-                        return;
-                    }
-
-                    // Append or replace. Retake means the screenshot was of the wrong screen, and keeping
-                    // it would send the wrong screen alongside the right one.
-                    if (appending)
-                    {
-                        shots.Add(result.Frame);
+                        reuseQueued = false;
                     }
                     else
                     {
-                        shots.Replace(result.Frame);
-                    }
+                        var result = await _gated.CaptureAsync(
+                            new CaptureRequest
+                            {
+                                Target = settings.Capture.ToWindowTarget(Game.DefaultProcessName, Game.DefaultWindowTitleMatch),
+                                Region = Game.FullWindow,
+                                PrivacyMasks = Game.PrivacyMasks,
+                                Label = "game window",
+                                Timeout = TimeSpan.FromSeconds(8),
+                            },
+                            CancellationToken.None);
 
-                    appending = false;
+                        if (!result.Success)
+                        {
+                            ShowBalloon($"Capture {result.Status}", result.Detail ?? "Unknown failure.", ToolTipIcon.Warning);
+                            return;
+                        }
+
+                        // Append or replace. Retake means the screenshot was of the wrong screen, and keeping
+                        // it would send the wrong screen alongside the right one.
+                        if (appending)
+                        {
+                            shots.Add(result.Frame);
+                        }
+                        else
+                        {
+                            shots.Replace(result.Frame);
+                        }
+
+                        appending = false;
+                        windowTitle = result.Frame.WindowTitle;
+                    }
 
                     Core.Diagnostics.Log.Info(
                         $"Ask: {shots.Count} screen(s) queued"
@@ -452,7 +478,7 @@ internal sealed class TrayApplication : IDisposable
 
                     using var ask = new AskWindow(
                         shots.Frames,
-                        result.Frame.WindowTitle,
+                        windowTitle,
                         Hotkey.TryParse(settings.Overlay.CaptureHotkey)?.Display ?? settings.Overlay.CaptureHotkey,
                         _recentQuestions,
                         carried);
@@ -511,8 +537,30 @@ internal sealed class TrayApplication : IDisposable
                 // "open the runes screen", and what it gets back should be the runes screen AND the
                 // character sheet it was already looking at, not the runes screen alone. Replacing was why
                 // a chain of "now open X" questions could never be answered as one.
-                while (await AnalyseAsync(shots.Frames, question, settings))
+                var retryAfterFailure = false;
+
+                while (true)
                 {
+                    var outcome = await AnalyseAsync(shots.Frames, question, settings);
+
+                    if (outcome == AnalyseOutcome.Done)
+                    {
+                        break;
+                    }
+
+                    // FAILED, so there is nothing wrong with the screens. Hand the dialog straight back with
+                    // them and the question intact rather than making the player reassemble a set of four
+                    // captures because somebody else's service was busy for ten seconds.
+                    if (outcome == AnalyseOutcome.Failed)
+                    {
+                        carried = question;
+                        appending = false;
+                        reuseQueued = true;
+                        retryAfterFailure = true;
+
+                        break;
+                    }
+
                     if (!WaitForRetake(whatToOpen: null))
                     {
                         return;
@@ -538,6 +586,13 @@ internal sealed class TrayApplication : IDisposable
                     shots.Add(again.Frame);
                 }
 
+                if (retryAfterFailure)
+                {
+                    // Back to the ask dialog, not to a fresh capture. `continue` on the OUTER loop reruns the
+                    // ask-and-analyse pass, and `reuseQueued` makes it skip straight to the dialog.
+                    continue;
+                }
+
                 // A hotkey press landed while the answer was open. Restart from the capture rather than
                 // reusing the question: the retake loop above exists for "same question, better screenshot",
                 // and reaching for the hotkey means the player wants to ask something else.
@@ -549,6 +604,15 @@ internal sealed class TrayApplication : IDisposable
                     {
                         return;
                     }
+
+                    // Cleared EXPLICITLY, because the state now lives outside the loop. This path is a new
+                    // question about new screens, so carrying the old ones over would send the previous
+                    // captures with it.
+                    shots.Clear();
+                    carried = null;
+                    appending = false;
+                    reuseQueued = false;
+                    windowTitle = string.Empty;
 
                     continue;
                 }
@@ -570,8 +634,28 @@ internal sealed class TrayApplication : IDisposable
         }
     }
 
-    /// <returns>True when the player asked to retake the screenshot and try the same question again.</returns>
-    private async Task<bool> AnalyseAsync(
+    /// <summary>
+    /// What the capture loop should do after an attempt.
+    /// </summary>
+    private enum AnalyseOutcome
+    {
+        /// <summary>The player read the answer and closed it.</summary>
+        Done,
+
+        /// <summary>They asked to capture again and re-ask the same question.</summary>
+        Retake,
+
+        /// <summary>
+        /// It failed. Reopen the ask dialog with the SAME screens and question so they can retry.
+        ///
+        /// <para>Distinct from <see cref="Retake"/> because nothing is wrong with the screenshots — a
+        /// provider being busy for ten seconds should not cost the player the four screens they assembled
+        /// and the question they typed, which is what abandoning the flow did.</para>
+        /// </summary>
+        Failed,
+    }
+
+    private async Task<AnalyseOutcome> AnalyseAsync(
         IReadOnlyList<CapturedFrame> frames, string question, LoadstarSettings settings)
     {
         var provider = settings.Ai.Provider;
@@ -581,10 +665,13 @@ internal sealed class TrayApplication : IDisposable
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             ShowBalloon(
-                "No API key",
-                $"Add your {providerInfo.DisplayName} API key in Settings.",
+                Strings.Get("error.title.failed"),
+                string.Format(Strings.Get("error.noKey"), providerInfo.DisplayName),
                 ToolTipIcon.Warning);
-            return false;
+
+            // Failed rather than Done, so the question and screens survive: adding a key in Settings and
+            // pressing Ask again is the natural next move, and losing the setup in between is not.
+            return AnalyseOutcome.Failed;
         }
 
         // Name the provider: this is the moment a screenshot leaves the machine, and which third
@@ -656,7 +743,11 @@ internal sealed class TrayApplication : IDisposable
 
         using var client = AiProviderFactory.Create(provider, apiKey);
 
-        var response = await client.AnalyzeAsync(
+        AiResponse response;
+
+        try
+        {
+            response = await client.AnalyzeAsync(
             new AiRequest
             {
                 // Guards against a model left over from a different provider — sending
@@ -693,6 +784,23 @@ internal sealed class TrayApplication : IDisposable
                 MaxOutputTokens = 8000,
             },
             CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is AiProviderException or AdviceParseException
+            or HttpRequestException or TaskCanceledException)
+        {
+            // REPORTED AND HANDED BACK, not thrown away. This used to reach the outer catch, which abandoned
+            // the whole interaction — the screens the player had assembled and the question they had typed
+            // went with it, so somebody else's ten-second outage cost them the entire setup.
+            Core.Diagnostics.Log.Error($"Analyse: {providerInfo.DisplayName} request failed", ex);
+
+            MessageBox.Show(
+                AiFailure.Describe(ex, providerInfo.DisplayName),
+                $"Loadstar — {AiFailure.Title(ex)}",
+                MessageBoxButtons.OK,
+                AiFailure.IsProviderOutage(ex) ? MessageBoxIcon.Warning : MessageBoxIcon.Error);
+
+            return AnalyseOutcome.Failed;
+        }
 
         Core.Diagnostics.Log.Info(
             $"Analyse: {providerInfo.DisplayName} replied with {response.Text?.Length ?? 0} chars.");
@@ -714,7 +822,7 @@ internal sealed class TrayApplication : IDisposable
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
 
-            return false;
+            return AnalyseOutcome.Failed;
         }
 
         var advice = AdviceParser.Parse(response.Text, DateTimeOffset.Now, response.Usage);
@@ -741,7 +849,9 @@ internal sealed class TrayApplication : IDisposable
             // Retry means the player took the "open that screen and try again" advice. Reported up so the
             // capture loop can run once more with the question already typed, instead of making them start
             // from the hotkey.
-            return window.ShowDialog() == DialogResult.Retry;
+            return window.ShowDialog() == DialogResult.Retry
+                ? AnalyseOutcome.Retake
+                : AnalyseOutcome.Done;
         }
         finally
         {
