@@ -70,6 +70,23 @@
     <WixVariable Id="WixUIBannerBmp" Value="!(bindpath.installer)\banner.bmp" />
     <WixVariable Id="WixUIDialogBmp" Value="!(bindpath.installer)\dialog.bmp" />
 
+    <!--
+      THE DIALOG TITLE BAR ICON CANNOT BE CHANGED FROM HERE, and this note exists so nobody spends an
+      afternoon proving it again. It shows a blue monitor-and-disc, which is msiexec.exe's own icon —
+      confirmed by extracting that icon and matching it against a screenshot of the running installer.
+
+      Windows Installer renders these dialogs itself, and it offers no hook for the window icon: the Dialog
+      table has no icon column, and ARPPRODUCTICON only reaches Add/Remove Programs. The three things that
+      look like they should work do not — the Icon table entry above, ARPPRODUCTICON, and the WixUI_Ico_*
+      streams, which are the exclamation and information glyphs drawn INSIDE a dialog body.
+
+      The only real fix is a Burn bootstrapper: a .exe wrapping this package, whose own window carries its
+      own icon. That was considered and declined on 2026-08-09, because Burn's UI would replace the branded
+      welcome and finish panels above and its standard interface offers no install-location picker — a
+      visible regression traded for a 16px icon. Revisit only alongside code signing, which an .exe needs
+      more urgently than an .msi does.
+    -->
+
     <Property Id="ARPPRODUCTICON" Value="Loadstar.ico" />
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/eugenebednik/loadstar" />
 
