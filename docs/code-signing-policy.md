@@ -19,9 +19,9 @@ separation of duties that does not exist.
 
 | Role | Held by | Responsibility |
 | --- | --- | --- |
-| Author | Eugene Bednik | Writes and commits code |
-| Reviewer | Eugene Bednik | Reviews changes before they reach `main` |
-| Approver | Eugene Bednik | Authorizes signing of a release artifact |
+| Author | R3N | Writes and commits code |
+| Reviewer | R3N | Reviews changes before they reach `main` |
+| Approver | R3N | Authorizes signing of a release artifact |
 
 **One person currently holds all three roles**, so the integrity guarantees rest on the automated
 controls below rather than on review by a second party. If a maintainer joins, Reviewer and Approver

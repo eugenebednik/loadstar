@@ -30,6 +30,45 @@ internal static class Program
             return;
         }
 
+        // --write-icon regenerates installer/Loadstar.ico from AppIcon, which is what keeps the icon Windows
+        // shows in Explorer and the Start Menu identical to the one the app draws for its tray and windows.
+        // Run it after changing AppIcon; the .ico is committed because the csproj needs it at build time, and
+        // a build cannot depend on running the thing it is building.
+        if (args.Contains("--write-icon", StringComparer.OrdinalIgnoreCase))
+        {
+            var target = args.SkipWhile(a => !a.Equals("--write-icon", StringComparison.OrdinalIgnoreCase))
+                .Skip(1)
+                .FirstOrDefault(a => !a.StartsWith("--", StringComparison.Ordinal))
+                ?? "Loadstar.ico";
+
+            // Every size Windows asks for: 16 in the tray and small lists, 32 on the desktop, 48 in the Start
+            // Menu, 256 for Explorer's extra-large view. Omitting one makes Windows scale a neighbour.
+            File.WriteAllBytes(target, AppIcon.BuildIcoFile(16, 20, 24, 32, 48, 64, 128, 256));
+
+            Console.WriteLine($"wrote {target} ({new FileInfo(target).Length:n0} bytes)");
+
+            // The installer's own artwork comes from the same mark, written beside the .ico. WixUI needs BMP
+            // and fixed dimensions, so these are not something a designer hands over once — they are
+            // regenerated whenever the icon changes, which is the point of doing it here.
+            var directory = Path.GetDirectoryName(Path.GetFullPath(target)) ?? ".";
+            var (banner, dialog) = AppIcon.RenderInstallerArt();
+
+            using (banner)
+            using (dialog)
+            {
+                var bannerPath = Path.Combine(directory, "banner.bmp");
+                var dialogPath = Path.Combine(directory, "dialog.bmp");
+
+                banner.Save(bannerPath, System.Drawing.Imaging.ImageFormat.Bmp);
+                dialog.Save(dialogPath, System.Drawing.Imaging.ImageFormat.Bmp);
+
+                Console.WriteLine($"wrote {bannerPath} (493x58)");
+                Console.WriteLine($"wrote {dialogPath} (493x312)");
+            }
+
+            return;
+        }
+
         // --settings opens the dialog on its own, without the tray. Purely so the window can be
         // opened, inspected and screenshotted without hunting through a tray menu each time.
         if (args.Contains("--settings", StringComparer.OrdinalIgnoreCase))

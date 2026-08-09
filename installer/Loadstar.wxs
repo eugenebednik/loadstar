@@ -16,12 +16,14 @@
      fragment checked into the repo, which rots the moment a dependency changes. v4+ globs at build
      time, so a new transitive DLL is packaged without anyone remembering to re-harvest.
 -->
+<?define LaunchText = "Start Loadstar now" ?>
+
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
      xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
 
   <Package Name="Loadstar"
-           Manufacturer="Eugene Bednik"
+           Manufacturer="R3N"
            Version="$(Version)"
            UpgradeCode="6f3c0f9a-6c4e-4a3f-9a2b-7d1e5c8b4a10"
            Scope="perMachine"
@@ -60,9 +62,74 @@
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
     <WixVariable Id="WixUILicenseRtf" Value="!(bindpath.installer)\License.rtf" />
 
-    <Property Id="ARPPRODUCTICON" Value="LoadstarIcon" />
+    <!--
+      Branded installer artwork, replacing WiX's stock bitmaps — the default panel is a generic disk graphic
+      that makes the installer look like it belongs to some other product. Both are generated from the same
+      mark as the icon; see AppIcon.RenderInstallerArt for why their text areas stay light.
+    -->
+    <WixVariable Id="WixUIBannerBmp" Value="!(bindpath.installer)\banner.bmp" />
+    <WixVariable Id="WixUIDialogBmp" Value="!(bindpath.installer)\dialog.bmp" />
+
+    <Property Id="ARPPRODUCTICON" Value="Loadstar.ico" />
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/eugenebednik/loadstar" />
-    <Icon Id="LoadstarIcon" SourceFile="!(bindpath.publish)\Loadstar.exe" />
+
+    <!--
+      The .ico DIRECTLY, not extracted from the executable. Extraction was what it did before, and it worked
+      only because the exe happened to carry an icon — which it did not: there was no icon resource at all, so
+      every shell surface showed the generic Windows exe icon. Pointing at the icon file removes the
+      indirection and the assumption behind it.
+
+      The Id keeps the .ico extension on purpose. Windows Installer uses it to decide how to register the
+      icon, and an Id without it produces an ICE warning and, on some shells, a missing icon.
+    -->
+    <Icon Id="Loadstar.ico" SourceFile="!(bindpath.installer)\Loadstar.ico" />
+
+    <!--
+      START THE APP WHEN SETUP FINISHES, ticked by default. Loadstar is a tray app with no window, so someone
+      who installs it and sees nothing happen has no signal that it worked; the tray icon is the confirmation.
+
+      Only offered on a fresh install, never on repair or uninstall, and only in an interactive install — a
+      silent /qn install shows no ExitDialog, so nothing launches, which is the correct behaviour for a
+      scripted deployment.
+    -->
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="$(LaunchText)" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+
+    <!--
+      WixShellExec, not a plain exe custom action, and it runs from the ExitDialog rather than the execute
+      sequence. That placement is deliberate: the ExitDialog runs in the installer's CLIENT process, which is
+      not elevated, so the app starts with the user's ordinary privileges. Launching it from the elevated
+      server process would leave a tray app running as administrator, writing its autostart entry and settings
+      into the wrong hive.
+    -->
+    <!--
+      SetProperty rather than a plain Property, and sequenced after CostFinalize because that is when
+      INSTALLFOLDER acquires a value. A literal Property containing [INSTALLFOLDER] builds with WIX1077 and
+      relies on the custom action expanding it later, which works but leaves a warning that reads like a
+      mistake every time anyone builds the installer.
+    -->
+    <SetProperty Id="WixShellExecTarget"
+                 Value="[INSTALLFOLDER]Loadstar.exe"
+                 After="CostFinalize"
+                 Sequence="both" />
+
+    <CustomAction Id="LaunchLoadstar"
+                  BinaryRef="Wix4UtilCA_X64"
+                  DllEntry="WixShellExec"
+                  Impersonate="yes"
+                  Return="ignore" />
+
+    <!--
+      Inside a UI element: Publish is not a child of Package. The condition is what keeps the launch to a
+      fresh install, so a repair or a change does not spawn a second copy.
+    -->
+    <UI>
+      <Publish Dialog="ExitDialog"
+               Control="Finish"
+               Event="DoAction"
+               Value="LaunchLoadstar"
+               Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />
+    </UI>
 
     <!--
       CLOSE THE RUNNING COPY FIRST. Loadstar lives in the tray permanently, so unlike most software it is
@@ -187,7 +254,8 @@
                 Name="Loadstar"
                 Description="AI game companion overlay"
                 Target="[INSTALLFOLDER]Loadstar.exe"
-                WorkingDirectory="INSTALLFOLDER" />
+                WorkingDirectory="INSTALLFOLDER"
+                Icon="Loadstar.ico" />
 
       <!--
         An explicit way out, in the same folder as the app. Settings → Installed apps already offers one and

@@ -9,6 +9,17 @@
     <RootNamespace>Loadstar.App</RootNamespace>
     <AssemblyName>Loadstar</AssemblyName>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+
+    <!--
+      Embeds the icon into Loadstar.exe. Without it the executable carried NO icon resource at all, so the
+      Start Menu shortcut, the desktop, Explorer and Add/Remove Programs all fell back to the generic Windows
+      exe icon while the tray showed the real mark — the app drew its own icon at runtime and the shell never
+      saw it.
+
+      The .ico is generated from AppIcon by the exe's own write-icon switch, and committed rather than produced
+      during the build, because a build cannot depend on running the thing it is building.
+    -->
+    <ApplicationIcon>..\..\installer\Loadstar.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
