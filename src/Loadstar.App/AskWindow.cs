@@ -77,7 +77,43 @@ internal sealed class AskWindow : ThemedForm
     private readonly System.Windows.Forms.Timer _connectivityPoll = new() { Interval = 8000 };
 
     private readonly Button _ask;
-    private readonly Label _offline;
+
+    /// <summary>
+    /// Why Ask is unavailable, shown directly above it. One label for both reasons rather than one each:
+    /// they are mutually exclusive in practice and two stacked warnings would just push the layout around.
+    /// </summary>
+    private readonly Label _blocked;
+
+    /// <summary>
+    /// Holds <see cref="_blocked"/> and, when offered, the Open Settings button. Visibility is toggled on
+    /// this rather than the label, so the space collapses entirely when nothing is wrong.
+    /// </summary>
+    private readonly Panel _blockedRow;
+
+    /// <summary>
+    /// Opens Settings and reports whether a key exists afterwards, or <c>null</c> when the caller has no
+    /// Settings to offer (the <c>--ask</c> harness).
+    ///
+    /// <para><b>A delegate rather than constructing SettingsWindow here.</b> This dialog would otherwise need
+    /// the settings store, the secret store and the provider catalogue purely to render one button, and every
+    /// test that opens an ask window would need all three.</para>
+    /// </summary>
+    private readonly Func<bool>? _fixKey;
+
+    private readonly Button? _openSettings;
+
+    /// <summary>
+    /// The provider that has no API key, or <c>null</c> when one is stored. Not readonly: adding the key
+    /// through <see cref="_openSettings"/> clears it, which is the whole point of offering the button.
+    /// </summary>
+    private string? _missingKeyFor;
+
+    /// <summary>
+    /// Last known reachability. Starts <c>true</c>, matching <see cref="ConnectivityMonitor"/>'s bias: the
+    /// cost of wrongly allowing a send is one failed request, and the cost of wrongly blocking it is an app
+    /// that cannot be used at all. Assume working until told otherwise.
+    /// </summary>
+    private bool _online = true;
 
     /// <summary>The working set. Deletions happen here, and <see cref="Kept"/> is what survived.</summary>
     private readonly List<CapturedFrame> _frames;
@@ -116,11 +152,15 @@ internal sealed class AskWindow : ThemedForm
         string hotkeyDisplay,
         IReadOnlyList<string> recentQuestions,
         string? initialQuestion = null,
-        Func<CancellationToken, Task<bool>>? probe = null)
+        Func<CancellationToken, Task<bool>>? probe = null,
+        string? missingKeyFor = null,
+        Func<bool>? fixKey = null)
     {
         ArgumentNullException.ThrowIfNull(frames);
 
         _connectivity = new ConnectivityMonitor(probe ?? InternetProbe.IsReachableAsync);
+        _missingKeyFor = missingKeyFor;
+        _fixKey = fixKey;
 
         if (frames.Count == 0)
         {
@@ -262,17 +302,53 @@ internal sealed class AskWindow : ThemedForm
         _ask = ask;
 
         // Above the action bar, so the explanation is next to the button it is about rather than buried in
-        // the body. Hidden while online — a permanent "you are connected" line is noise.
-        _offline = new Label
+        // the body. Hidden when nothing is wrong — a permanent "you are connected" line is noise.
+        //
+        // Text is set by ApplyGate rather than here, because there are now two reasons Ask can be off and
+        // which one applies is not known until the first poll.
+        _blocked = new Label
         {
-            Text = Strings.Get("ask.offline"),
-            Dock = DockStyle.Bottom,
-            Height = Theme.RowHeight(lines: 2, extra: 6),
-            Padding = new Padding(16, 0, 16, 0),
+            Dock = DockStyle.Fill,
+            Padding = new Padding(16, 0, 8, 0),
             ForeColor = Theme.Warning,
+            BackColor = Color.Transparent,
+        };
+
+        // Only when there is a key to add AND somewhere to add it. A missing key is the one blocker the
+        // player can fix from here, and the alternative is cancelling — which throws away the screens they
+        // just assembled in game and the question they typed.
+        if (missingKeyFor is not null && fixKey is not null)
+        {
+            _openSettings = new Button { Text = Strings.Get("ask.opensettings"), Dock = DockStyle.Right, Width = 200 };
+            _openSettings.Click += (_, _) => OnOpenSettings();
+        }
+
+        // ITS OWN ROW, with the button beside the text rather than in the action bar below. The action bar
+        // is a FlowLayoutPanel and four buttons already fill the window: a fifth wrapped onto a second row
+        // that the bar is not tall enough to show, so the button existed, was enabled, and was invisible.
+        // Verified by screenshot, which is the only way that class of bug gets caught.
+        //
+        // Beside the explanation is also simply the right place — it is the fix for what the sentence says.
+        _blockedRow = new Panel
+        {
+            Dock = DockStyle.Bottom,
+            // Three lines, not two. The sentence has to fit beside a 200px button, and German and Russian
+            // both run about half again as long as the English it was sized against.
+            Height = Theme.RowHeight(lines: 3, extra: 10),
             BackColor = Color.Transparent,
             Visible = false,
         };
+
+        // ORDER MATTERS, and it is the reverse of what reads naturally. WinForms docks the LAST-added
+        // sibling first, so adding the Fill label last gave it the whole row and the Right-docked button
+        // then painted on top of the sentence, cutting it mid-word. The button has to go in afterwards to
+        // reserve its strip before the label fills what is left.
+        _blockedRow.Controls.Add(_blocked);
+
+        if (_openSettings is not null)
+        {
+            _blockedRow.Controls.Add(_openSettings);
+        }
         var cancel = new Button { Text = Strings.Get("common.cancel"), DialogResult = DialogResult.Cancel };
 
         // RETAKE, as DialogResult.Retry. The caller loops on it rather than the dialog re-capturing
@@ -289,6 +365,11 @@ internal sealed class AskWindow : ThemedForm
         Theme.MakeSecondary(cancel);
         Theme.MakeSecondary(retake);
         Theme.MakeSecondary(add);
+
+        if (_openSettings is not null)
+        {
+            Theme.MakeSecondary(_openSettings);
+        }
 
         // Taller than before, because the stacked suggestions occupy three lines where the old chip row
         // occupied one. Sized so the text box keeps roughly the height it had rather than being
@@ -315,8 +396,9 @@ internal sealed class AskWindow : ThemedForm
         // BEFORE the action bar, so it sits above it. Docked controls added later end up closer to the
         // edge, so adding this afterwards put it below the buttons and half of it off the bottom of the
         // window — the notice explaining why Ask was greyed out was itself clipped.
-        Controls.Add(_offline);
+        Controls.Add(_blockedRow);
         Controls.Add(CreateActionBar(ask, add, retake, cancel));
+
         Controls.Add(hint);
         Controls.Add(caption);
         Controls.Add(heading);
@@ -348,7 +430,11 @@ internal sealed class AskWindow : ThemedForm
         {
             if (!IsDisposed && IsHandleCreated)
             {
-                BeginInvoke(() => ApplyConnectivity(online));
+                BeginInvoke(() =>
+                {
+                    _online = online;
+                    ApplyGate();
+                });
             }
         };
 
@@ -356,6 +442,11 @@ internal sealed class AskWindow : ThemedForm
 
         Shown += (_, _) =>
         {
+            // BEFORE the connectivity check, so a dialog opened with no API key says so on the first frame
+            // rather than looking usable until a probe comes back. The missing key is known synchronously
+            // and does not need waiting for.
+            ApplyGate();
+
             _connectivity.Start();
             _connectivityPoll.Start();
 
@@ -374,28 +465,75 @@ internal sealed class AskWindow : ThemedForm
     /// <summary>
     /// Enables or disables Ask, and says why.
     ///
-    /// <para>Only Ask. Retake and Add work perfectly well offline — the capture is local — and disabling
-    /// them would strand someone mid-flow with no way to finish assembling their screens while the wifi
-    /// comes back.</para>
+    /// <para>Two things can block it — no API key, and no connection — and this is the single place that
+    /// decides. They were separate before, and a second reason bolted on beside the first is how a button
+    /// ends up enabled because one check said yes while the other said no.</para>
+    ///
+    /// <para><b>The missing key wins when both apply.</b> Connectivity comes back on its own and the key
+    /// never does, so naming the connection first would send someone to wait for a problem that was not
+    /// theirs to fix.</para>
+    ///
+    /// <para>Only Ask is gated. Retake and Add work perfectly well offline and without a key — the capture is
+    /// local — and disabling them would strand someone mid-flow with no way to finish assembling their
+    /// screens.</para>
     /// </summary>
-    private void ApplyConnectivity(bool online)
+    private void ApplyGate()
     {
+        var reason = _missingKeyFor is not null
+            ? string.Format(Strings.Get("ask.nokey"), _missingKeyFor)
+            : _online ? null : Strings.Get("ask.offline");
+
+        var allowed = reason is null;
+
         // Not just Enabled: a flat button with an explicit BackColor keeps painting it when disabled, so
         // this is what actually greys it out. See Theme.SetPrimaryEnabled.
-        Theme.SetPrimaryEnabled(_ask, online);
+        Theme.SetPrimaryEnabled(_ask, allowed);
 
-        _offline.Visible = !online;
+        _blocked.Text = reason ?? string.Empty;
+        _blockedRow.Visible = !allowed;
+
+        if (_openSettings is not null)
+        {
+            // Vanishes once the key is in, because from then on it is just a way to lose your place.
+            _openSettings.Visible = _missingKeyFor is not null;
+        }
 
         // Set HERE and not only in the constructor. Theme.Apply's Label case forces every small label to
         // SubtleText at OnShown, so a warning colour assigned during construction is gone by the time
         // anyone sees it — the same overwrite that made the delete button an empty rectangle. This runs
         // after the theme walk and on every transition, so it is the assignment that survives.
-        _offline.ForeColor = Theme.Warning;
+        _blocked.ForeColor = Theme.Warning;
 
-        _tips.SetToolTip(_ask, online ? string.Empty : Strings.Get("ask.offline"));
+        _tips.SetToolTip(_ask, reason ?? string.Empty);
 
         // Ctrl+Enter bypasses the button entirely, so the form-level accept has to go too.
-        AcceptButton = online ? _ask : null;
+        AcceptButton = allowed ? _ask : null;
+    }
+
+    /// <summary>
+    /// Opens Settings so the key can be added without losing the screens, then re-gates on what came back.
+    ///
+    /// <para>The caller owns the check, because "is there a key for the selected provider" needs the secret
+    /// store and the provider that is selected NOW — the player may well have changed provider in the dialog
+    /// they were just handed, which is how this state is most often reached in the first place.</para>
+    /// </summary>
+    private void OnOpenSettings()
+    {
+        if (_fixKey is null)
+        {
+            return;
+        }
+
+        if (_fixKey())
+        {
+            _missingKeyFor = null;
+        }
+
+        ApplyGate();
+
+        // Focus back where they were typing, rather than leaving it on a button that may have just vanished.
+        _question.Focus();
+        _question.SelectionStart = _question.TextLength;
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)

@@ -476,12 +476,28 @@ internal sealed class TrayApplication : IDisposable
                         $"Ask: {shots.Count} screen(s) queued"
                         + (shots.IsFull ? ", at the maximum — the next capture replaces the oldest." : "."));
 
+                    // Re-read, because Settings may have been opened FROM the dialog on a previous pass and
+                    // the provider changed there. Using the copy captured at the top of the interaction
+                    // would gate on a provider the player is no longer using.
+                    settings = _store.Load();
+
                     using var ask = new AskWindow(
                         shots.Frames,
                         windowTitle,
                         Hotkey.TryParse(settings.Overlay.CaptureHotkey)?.Display ?? settings.Overlay.CaptureHotkey,
                         _recentQuestions,
-                        carried);
+                        carried,
+                        // GATED UP FRONT rather than discovered on send. Without a key the request cannot
+                        // succeed, and the failure used to arrive as a balloon tip — which Windows may not
+                        // display at all — followed by the dialog reopening. That read as "the window keeps
+                        // coming back and no error is shown", and it was reported exactly that way.
+                        missingKeyFor: MissingKeyProvider(settings),
+                        fixKey: () =>
+                        {
+                            ShowSettings();
+
+                            return MissingKeyProvider(_store.Load()) is null;
+                        });
 
                     _openAsk = ask;
 
@@ -655,6 +671,19 @@ internal sealed class TrayApplication : IDisposable
         Failed,
     }
 
+    /// <summary>
+    /// The display name of the selected provider when it has no stored API key, or <c>null</c> when it does.
+    ///
+    /// <para>Returns the NAME rather than a bool so the message can say which provider needs a key. With
+    /// three providers configurable and a key stored per provider, "add your API key" leaves the player
+    /// guessing which — and switching provider is the most common way to arrive here, so the one they last
+    /// set up is exactly the wrong guess.</para>
+    /// </summary>
+    private string? MissingKeyProvider(LoadstarSettings settings) =>
+        string.IsNullOrWhiteSpace(_secrets.Resolve(settings.Ai.Provider))
+            ? AiCatalog.For(settings.Ai.Provider).DisplayName
+            : null;
+
     private async Task<AnalyseOutcome> AnalyseAsync(
         IReadOnlyList<CapturedFrame> frames, string question, LoadstarSettings settings)
     {
@@ -664,14 +693,21 @@ internal sealed class TrayApplication : IDisposable
 
         if (string.IsNullOrWhiteSpace(apiKey))
         {
-            ShowBalloon(
-                Strings.Get("error.title.failed"),
-                string.Format(Strings.Get("error.noKey"), providerInfo.DisplayName),
-                ToolTipIcon.Warning);
+            // A BACKSTOP THAT ENDS THE INTERACTION. The ask dialog gates its own button on this, so getting
+            // here means the key went away between the dialog opening and the send. It must not return
+            // Failed: that reopens the ask dialog, whose button is disabled for the same reason, and the two
+            // together are an unbreakable loop with no visible cause — which is precisely what shipped and
+            // what got reported. A modal says so once and stops.
+            Core.Diagnostics.Log.Warn(
+                $"Analyse: no API key stored for {providerInfo.DisplayName}; nothing was sent.");
 
-            // Failed rather than Done, so the question and screens survive: adding a key in Settings and
-            // pressing Ask again is the natural next move, and losing the setup in between is not.
-            return AnalyseOutcome.Failed;
+            Modal.Show(
+                string.Format(Strings.Get("error.noKey"), providerInfo.DisplayName),
+                $"Loadstar — {Strings.Get("error.title.failed")}",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+
+            return AnalyseOutcome.Done;
         }
 
         // Name the provider: this is the moment a screenshot leaves the machine, and which third
@@ -793,7 +829,9 @@ internal sealed class TrayApplication : IDisposable
             // went with it, so somebody else's ten-second outage cost them the entire setup.
             Core.Diagnostics.Log.Error($"Analyse: {providerInfo.DisplayName} request failed", ex);
 
-            MessageBox.Show(
+            // Modal, not MessageBox.Show: an unowned message box parents to the active window, which during
+            // play is the game, so it opened BEHIND it and the player saw nothing. See Modal.
+            Modal.Show(
                 AiFailure.Describe(ex, providerInfo.DisplayName),
                 $"Loadstar — {AiFailure.Title(ex)}",
                 MessageBoxButtons.OK,
@@ -812,13 +850,12 @@ internal sealed class TrayApplication : IDisposable
         {
             Core.Diagnostics.Log.Warn("Analyse: provider returned an empty response.");
 
-            MessageBox.Show(
-                $"{providerInfo.DisplayName} accepted the screenshot but returned no text. This is "
-                + "usually a rate limit, an exhausted quota, or a response cut short."
-                + Environment.NewLine + Environment.NewLine
-                + $"Nothing is wrong with your settings — try again, and if it repeats, check your "
-                + $"{providerInfo.DisplayName} usage.",
-                "Loadstar — empty response",
+            // Localised and topmost, like every other failure here. This one was still hardcoded English
+            // after the rest were translated — the "all errors" pass missed it because it is the only
+            // message built inline rather than through AiFailure.
+            Modal.Show(
+                string.Format(Strings.Get("error.unreadableReply"), providerInfo.DisplayName),
+                $"Loadstar — {Strings.Get("error.title.failed")}",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
 

@@ -122,9 +122,13 @@ jobs:
       - name: Install WiX
         run: dotnet tool install --global wix --version ${{ env.WIX_VERSION }}
 
-      # WixUI_InstallDir lives in the UI extension, not the core toolset.
-      - name: Add WiX UI extension
-        run: wix extension add --global WixToolset.UI.wixext/${{ env.WIX_VERSION }}
+      # WixUI_InstallDir lives in the UI extension, and util:CloseApplication in the Util one. Neither is
+      # in the core toolset, and both are pinned to the same version as it — a version skew between the
+      # toolset and an extension fails the build with a schema error rather than anything descriptive.
+      - name: Add WiX extensions
+        run: |
+          wix extension add --global WixToolset.UI.wixext/${{ env.WIX_VERSION }}
+          wix extension add --global WixToolset.Util.wixext/${{ env.WIX_VERSION }}
 
       # One MSI per language, matching the set the app itself supports. The installer UI strings come
       # from the WiX UI extension's own localisations, so each of these is a genuinely localised
@@ -155,6 +159,7 @@ jobs:
               -bindpath "publish=$PWD/publish" `
               -bindpath "installer=$PWD/installer" `
               -ext WixToolset.UI.wixext `
+              -ext WixToolset.Util.wixext `
               -out $out
             Write-Host "::endgroup::"
 

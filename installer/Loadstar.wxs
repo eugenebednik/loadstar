@@ -17,7 +17,8 @@
      time, so a new transitive DLL is packaged without anyone remembering to re-harvest.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
-     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
 
   <Package Name="Loadstar"
            Manufacturer="Eugene Bednik"
@@ -63,6 +64,63 @@
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/eugenebednik/loadstar" />
     <Icon Id="LoadstarIcon" SourceFile="!(bindpath.publish)\Loadstar.exe" />
 
+    <!--
+      CLOSE THE RUNNING COPY FIRST. Loadstar lives in the tray permanently, so unlike most software it is
+      running every single time somebody uninstalls or updates it — which means the files-in-use path is the
+      normal path here, not an edge case. Without this, Windows Installer finds its own files locked and
+      either shows the "the following applications should be closed" dialog or defers the deletions to a
+      reboot, leaving a half-removed install behind until the machine restarts.
+
+      RebootPrompt="no" is the load-bearing attribute: it is what stops a successful uninstall from ending
+      in a restart request.
+
+      TerminateProcess after CloseMessage, because asking is not enough on its own. CloseMessage sends
+      WM_CLOSE to top-level windows, and a tray app's only windows are a hidden message sink and a
+      NotifyIcon — neither obliged to respond. Terminating loses nothing: settings are written when the
+      dialog is accepted, not at exit, so there is no unsaved state to lose. Prompting is disabled for the
+      same reason a silent uninstall should stay silent.
+    -->
+    <util:CloseApplication Id="CloseLoadstar"
+                           Target="Loadstar.exe"
+                           Description="Loadstar is running and must be closed before it can be removed."
+                           CloseMessage="yes"
+                           TerminateProcess="0"
+                           RebootPrompt="no"
+                           PromptToContinue="no" />
+
+    <!--
+      Hands the per-user leftovers back to the app, which is the only thing that can reach them. See
+      UninstallCleanup for why the installer cannot do this itself in a perMachine package.
+
+      Execute="immediate" with Impersonate="yes", NOT deferred. Deferred is the usual advice because it runs
+      elevated, but elevation is exactly what must be avoided here: an elevated action runs as the installing
+      account and would clean the wrong profile. Nothing being removed needs admin rights — it is the
+      invoking user's own hive and their own AppData.
+
+      Return="ignore" so a failure to tidy up can never fail an uninstall.
+    -->
+    <CustomAction Id="RemoveUserData"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="&quot;[INSTALLFOLDER]Loadstar.exe&quot; --uninstall-cleanup"
+                  Execute="immediate"
+                  Impersonate="yes"
+                  Return="ignore" />
+
+    <InstallExecuteSequence>
+      <!--
+        Before RemoveFiles, because the executable being invoked is one of the files about to be deleted.
+
+        The condition is what keeps an update from wiping settings. REMOVE="ALL" alone is true during a
+        MajorUpgrade as well, since that works by uninstalling the old package — so on every version bump
+        this would delete the user's API key and configuration and look like the app losing them for no
+        reason. UPGRADINGPRODUCTCODE is set only in that case, so excluding it narrows this to a genuine
+        uninstall.
+      -->
+      <Custom Action="RemoveUserData"
+              Before="RemoveFiles"
+              Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
+
   </Package>
 
   <Fragment>
@@ -88,6 +146,22 @@
                 Description="AI game companion overlay"
                 Target="[INSTALLFOLDER]Loadstar.exe"
                 WorkingDirectory="INSTALLFOLDER" />
+
+      <!--
+        An explicit way out, in the same folder as the app. Settings → Installed apps already offers one and
+        is the modern route, but this app spends its life as a tray icon with no window and no menu bar, so a
+        user who wants rid of it has nothing on screen to work from and has to know where Windows keeps that
+        list. The Start Menu entry is where they will look first.
+
+        msiexec /x [ProductCode] rather than a path to anything: ProductCode is substituted at build time and
+        the command keeps working regardless of where the package was installed from or whether it still
+        exists. System64Folder because the package is x64.
+      -->
+      <Shortcut Id="UninstallStartMenu"
+                Name="Uninstall Loadstar"
+                Description="Removes Loadstar from this computer"
+                Target="[System64Folder]msiexec.exe"
+                Arguments="/x [ProductCode]" />
 
       <RemoveFolder Id="RemoveShortcutFolder" Directory="ShortcutFolder" On="uninstall" />
 

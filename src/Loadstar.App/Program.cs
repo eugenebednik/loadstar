@@ -19,6 +19,17 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        // FIRST, ahead of every other switch, and that ordering is the point: this runs during an MSI
+        // uninstall with no user present, so it must not touch the settings store, must not initialise the
+        // log in a directory it is about to delete, and must not construct anything that could show a
+        // dialog. Every branch below does at least one of those.
+        if (args.Contains(UninstallCleanup.Flag, StringComparer.OrdinalIgnoreCase))
+        {
+            UninstallCleanup.Run();
+
+            return;
+        }
+
         // --settings opens the dialog on its own, without the tray. Purely so the window can be
         // opened, inspected and screenshotted without hunting through a tray menu each time.
         if (args.Contains("--settings", StringComparer.OrdinalIgnoreCase))
@@ -122,6 +133,14 @@ internal static class Program
             // unplugging anything.
             var offline = args.Contains("--offline", StringComparer.OrdinalIgnoreCase);
 
+            // --nokey does the same for the missing-API-key gate, and for the same stated reason: this state
+            // shipped broken because it could only be reached by genuinely having no key, so nobody ever
+            // looked at it. The fake provider name is obviously fake so a screenshot of this cannot be
+            // mistaken for the real dialog.
+            var noKey = args.Contains("--nokey", StringComparer.OrdinalIgnoreCase)
+                ? "Example AI (synthetic)"
+                : null;
+
             using var ask = new AskWindow(
                 [.. Enumerable.Range(1, count).Select(SyntheticScreen)],
                 "THRONE AND LIBERTY (synthetic)",
@@ -130,7 +149,11 @@ internal static class Program
                 // right to leave them untranslated — but seeding an English one here made the dev harness
                 // look like a localisation bug, and it was reported as one.
                 [],
-                probe: offline ? _ => Task.FromResult(false) : null);
+                probe: offline ? _ => Task.FromResult(false) : null,
+                missingKeyFor: noKey,
+                // Reports that the key is now present, so the recovery path — blocked, open Settings, Ask
+                // becomes usable — can be walked through without touching a real credential.
+                fixKey: noKey is null ? null : () => true);
 
             Application.Run(ask);
             return;
