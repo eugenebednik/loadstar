@@ -240,12 +240,26 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest-build
-          name: Latest build (${{ needs.package.outputs.version }})
+          # BETA in the title, because the title is all most people read. This channel is every commit to
+          # main, tested only by CI, and it sits on the releases page next to real versions — so the label
+          # has to carry the warning by itself rather than relying on anyone opening the body text.
+          name: BETA — dev build ${{ needs.package.outputs.version }} (use at your own risk)
           prerelease: true
           # Every filename here is now version-free, so each push REPLACES the previous asset
           # instead of adding to it.
           files: artifacts/*.msi
           body: |
+            > ### ⚠️ Beta — development build, use at your own risk
+            >
+            > This is built from whatever is on `main` right now. It has passed the automated tests and
+            > **nothing else** — no play-testing, no verification against a live game client. Features may
+            > be half-finished, and advice it gives may be wrong in ways a released version would not be.
+            >
+            > **If you want something dependable, take the
+            > [latest stable release](https://github.com/${{ github.repository }}/releases/latest)
+            > instead.** Use this one only if you specifically want to try something unreleased and are
+            > willing to hit bugs.
+
             Automatic build of `main` — version **${{ needs.package.outputs.version }}**
             (commit ${{ github.sha }}).
 
@@ -254,8 +268,8 @@ jobs:
 
             Everything needed to run is included; there is no separate .NET download.
 
-            This tag moves with every push to `main`, so it is not a stable version. For a pinned
-            release, use a `v*` tag.
+            This tag moves with every push to `main`, so it is not a stable version and its version number
+            goes up on every commit. For a pinned, tested build, use a `v*` release.
 
   release:
     needs: package
