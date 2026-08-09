@@ -166,6 +166,21 @@ internal static class Theme
         {
             switch (child)
             {
+                // BEFORE the TextBox case, and it does not derive from it — both descend from TextBoxBase, so
+                // a RichTextBox matches no case at all without this and renders in the system palette: white
+                // box, black text, inside a dark window. It also needs its link colour set, which is the
+                // whole reason it is a RichTextBox.
+                case RichTextBox rich:
+                    rich.BackColor = Surface;
+                    rich.ForeColor = Text;
+                    rich.Font = MonoFont;
+                    rich.BorderStyle = BorderStyle.FixedSingle;
+
+                    // No LinkColor property exists on the WinForms RichTextBox — that is a WPF one. Links get
+                    // the system blue, which is close to unreadable on this Surface, so the owner recolours
+                    // the URL ranges itself after setting the text. See ResultWindow.HighlightLinks.
+                    break;
+
                 case TextBox textBox:
                     textBox.BackColor = Surface;
                     textBox.ForeColor = Text;

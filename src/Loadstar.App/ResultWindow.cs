@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using Loadstar.Core.Model;
 using Loadstar.Games.ThroneAndLiberty;
@@ -33,18 +34,44 @@ internal sealed class ResultWindow : ThemedForm
 
         var rendered = Render(advice, plan, question);
 
-        var body = new TextBox
+        // A RichTextBox rather than a TextBox, for one reason: DetectUrls. The advice names questlog builds
+        // and the useful thing to do with a build is open it, which a plain TextBox cannot offer at all — the
+        // player was left selecting a URL by hand out of a monospace block.
+        var body = new RichTextBox
         {
-            Multiline = true,
             ReadOnly = true,
             Dock = DockStyle.Fill,
-            ScrollBars = ScrollBars.Vertical,
+            ScrollBars = RichTextBoxScrollBars.Vertical,
             Font = Theme.MonoFont,
             BackColor = Theme.Surface,
             ForeColor = Theme.Text,
             BorderStyle = BorderStyle.FixedSingle,
-            Text = rendered,
+            DetectUrls = true,
+            // Otherwise the control paints a white margin outside the text area, which reads as a rendering
+            // fault rather than as padding.
+            Padding = new Padding(6),
+            // NEWLINES NORMALISED TO \n, and this is not cosmetic — without it the answer arrives as one
+            // run-on paragraph. Render builds with StringBuilder.AppendLine, which emits Environment.NewLine
+            // (CRLF on Windows), and assigning CRLF to RichTextBox.Text loses the breaks entirely. Diagnosed
+            // rather than guessed: the same text showed 21 line breaks going in, the control reported a
+            // different count, and the only breaks that survived on screen were the handful written as bare
+            // \n inside a step's rationale. A plain TextBox handles CRLF fine, which is why this only appeared
+            // when the control was swapped to get clickable links.
+            Text = rendered.Replace("\r\n", "\n"),
         };
+
+        body.LinkClicked += (_, e) => OpenBuildLink(e.LinkText);
+
+        // NO MANUAL RECOLOURING, and that is a measured decision rather than a shrug. WinForms' RichTextBox
+        // has no LinkColor property, so the tempting fix is to select each URL after setting Text and assign
+        // SelectionColor. That was implemented and it DESTROYED THE TEXT: 38 lines went in and 4 came out,
+        // because Select() indexes the control's own character space, which does not agree with what the Text
+        // getter returns once CRLF is involved. The answer arrived as one run-on paragraph.
+        //
+        // The system link colour is legible against this Surface anyway, and links are already clickable from
+        // DetectUrls. Colouring them would be cosmetic; losing every line break was not. If a future attempt
+        // is made, build the content as RTF with an explicit colour table rather than mutating the control
+        // after the fact — and check the line count.
 
         var bodyFrame = new Panel
         {
@@ -111,7 +138,51 @@ internal sealed class ResultWindow : ThemedForm
         AcceptButton = close;
         CancelButton = close;
 
-        Shown += (_, _) => { body.SelectionLength = 0; Activate(); };
+        Shown += (_, _) =>
+        {
+            // Caret to the start with nothing selected. A RichTextBox opens with the whole first line
+            // highlighted otherwise, which looks like the user clicked something.
+            body.SelectionStart = 0;
+            body.SelectionLength = 0;
+
+            Activate();
+        };
+    }
+
+    /// <summary>
+    /// Opens a link from the advice text in the default browser.
+    ///
+    /// <para><b>Only questlog.gg, and that restriction is the point rather than tidiness.</b> This text is
+    /// model output, and model output is shaped by screenshots and by build names other players wrote —
+    /// neither of which this app controls. A link is the one element of an answer that does something when
+    /// touched, so the host is checked here rather than trusted from the string. Anything else is left as
+    /// plain text the player can read and copy, which costs them a paste and costs an attacker the click.</para>
+    ///
+    /// <para>Also why the prompt lists the real URLs and says to quote them character for character: a
+    /// composed questlog URL 404s, and a dead link is indistinguishable from a deleted build.</para>
+    /// </summary>
+    private void OpenBuildLink(string? link)
+    {
+        if (string.IsNullOrWhiteSpace(link))
+        {
+            return;
+        }
+
+        if (!Core.Net.LinkPolicy.IsAllowed(link, out var uri) || uri is null)
+        {
+            Core.Diagnostics.Log.Warn($"Result: refused to open a link outside questlog.gg — {link}");
+
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            Core.Diagnostics.Log.Error($"Result: could not open {uri.AbsoluteUri}", ex);
+        }
     }
 
     private static string Render(Advice advice, RedistributionPlan? plan, string? question)

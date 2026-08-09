@@ -68,6 +68,23 @@ internal static class Program
             return;
         }
 
+        // --result opens the answer window with a synthetic answer, for the same reason --settings and --ask
+        // exist: the real one needs a capture, an API key and a paid round trip, and "ask the user to check
+        // it" is a slow way to discover that a link rendered unreadably.
+        if (args.Contains("--result", StringComparer.OrdinalIgnoreCase))
+        {
+            ApplicationConfiguration.Initialize();
+
+            var store1 = new Core.Configuration.SettingsStore();
+            Core.Diagnostics.Log.Initialize(store1.Directory);
+            Strings.Use(store1.Load().Language);
+
+            using var result = new ResultWindow(SyntheticAdvice(), plan: null, question: "What should I build?");
+            Application.Run(result);
+
+            return;
+        }
+
         // --icon-probe measures whether local icon identification works, against the real catalogue and a
         // real capture. See IconProbe: the thresholds it tests were calibrated on synthetic icons and the
         // code that owns them asks in writing to be re-measured on real ones.
@@ -266,6 +283,39 @@ internal static class Program
             MessageBoxButtons.OK,
             MessageBoxIcon.Error);
     }
+
+    /// <summary>
+    /// A stand-in answer for <c>--result</c>: two questlog links that should render as clickable accents, and
+    /// one off-site link that must NOT, so both halves of the host rule are visible at a glance.
+    /// </summary>
+    private static Core.Model.Advice SyntheticAdvice() => new()
+    {
+        GeneratedAt = DateTimeOffset.UtcNow,
+        Headline = "Adopt a recent Seeker build, then fix your stat spread",
+        RecognizedScreen = Core.Model.ScreenKind.Character,
+        Steps =
+        [
+            new Core.Model.AdviceStep
+            {
+                Rank = 1,
+                Action = "Pick a target build — bow+wand is played as healer or dps",
+                Category = "Build",
+                Rationale =
+                    "Most-liked and updated this month:\n"
+                    + "  PvE healer — https://questlog.gg/throne-and-liberty/en/character-builder/GoldenConquestAndWriter\n"
+                    + "  PvP dps    — https://questlog.gg/throne-and-liberty/en/character-builder/InfernalRavenousUnderTheSalvation\n"
+                    + "This one is NOT ours and must not be clickable: https://example.com/not-questlog",
+            },
+            new Core.Model.AdviceStep
+            {
+                Rank = 2,
+                Action = "Move 9 allocated points into Fortitude for the 80 threshold",
+                Category = "Stat Points",
+                Rationale = "Costs nothing but a reallocation; gains Endurance 60 and Heavy Attack Evasion 60.",
+            },
+        ],
+        MissingInformation = ["Hover a stat for its Base / Equipment / Stellar Journey split."],
+    };
 
     /// <summary>
     /// A stand-in game screen for <c>--ask</c>: numbered, 16:9, and obviously not a real capture, so a
