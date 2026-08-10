@@ -108,6 +108,37 @@ internal static class Program
                     Console.WriteLine(
                         $"{image.Width,5}x{image.Height,-5} slots={found.Count,3}  ring={ring,4}px"
                         + $"  columns={columns}  {Path.GetFileName(path)}");
+
+                    // The rectangles themselves, next to the image, when asked. Descriptor experiments run
+                    // outside this codebase and must use the SHIPPING geometry rather than a reimplementation
+                    // of it — a second copy of the detector would be measuring the wrong thing.
+                    if (args.Contains("--json", StringComparer.OrdinalIgnoreCase))
+                    {
+                        var rows = found.Select((slot, i) => new
+                        {
+                            index = i,
+                            row = slot.Row,
+                            column = slot.Column,
+                            name = found.Count == Games.ThroneAndLiberty.TlEquipmentLayout.Order.Count
+                                ? Games.ThroneAndLiberty.TlEquipmentLayout.SlotNameForIndex(i)
+                                : null,
+                            categories = found.Count == Games.ThroneAndLiberty.TlEquipmentLayout.Order.Count
+                                ? Games.ThroneAndLiberty.TlEquipmentLayout.CategoriesForIndex(i)
+                                : Games.ThroneAndLiberty.TlEquipmentLayout.CategoriesForRow(slot.Row),
+                            ring = new { slot.Ring.X, slot.Ring.Y, slot.Ring.Width, slot.Ring.Height },
+                            disc = new { slot.Disc.X, slot.Disc.Y, slot.Disc.Width, slot.Disc.Height },
+                            artwork = new { slot.Artwork.X, slot.Artwork.Y, slot.Artwork.Width, slot.Artwork.Height },
+                        });
+
+                        var json = System.Text.Json.JsonSerializer.Serialize(
+                            new { image = new { image.Width, image.Height }, slots = rows },
+                            new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+
+                        var target = Path.ChangeExtension(path, ".slots.json");
+
+                        File.WriteAllText(target, json);
+                        Console.WriteLine($"  wrote {target}");
+                    }
                 }
                 catch (Exception ex)
                 {

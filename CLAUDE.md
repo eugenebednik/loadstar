@@ -232,6 +232,60 @@ Two mechanisms replace guessing:
 The model's job is reading **numbers and layout**, which it is reliable at. Identification is
 ours.
 
+### How icon matching actually has to work — measured 2026-08-10 against confirmed ground truth
+
+This sat at 2 of 13 slots for a long time, and both reasons turned out to be wrong assumptions rather
+than missing tuning. Ground truth for the measurements below is the **PvP Heals loadout**, where the
+player confirmed head / hands / legs / feet are Frigid Melody and **chest is a different piece**
+because the set needs only four.
+
+**1. The descriptor was luminance-only, and colour is the signal.** Ranking the correct item inside
+its category pool on a live sheet:
+
+| slot | 256-bit dHash (was) | 12x12 RGB signature |
+| --- | --- | --- |
+| head | #2 of 109 | **#1** |
+| hands | #47 of 110 | **#2** |
+| legs | #20 of 108 | **#5** |
+| feet | #60 of 106 | **#26** |
+
+`ColourSignature` was tried before and correctly rejected at rank 154 — but that was a **global
+histogram**, which discards where the colours are. The conclusion "colour does not work" was really
+"colour histograms do not work", and generalising it cost this feature months. `IconSignature` is a
+12x12 grid **per channel**, centred and unit-normalised per channel, compared by cosine. The
+per-channel normalisation is what survives the game relighting its tiles — and its price is that a
+purely **uniform** colour cast is invisible, which is pinned in a test rather than left to be
+rediscovered.
+
+**2. Per-slot matching is the wrong question. Identify the SET first.** No single tile resolves
+confidently — only the hat wins outright — so any per-slot margin rule returns nothing. But scoring
+whole sets across all armour tiles at once is decisive. Exhaustively over **318 candidate sets**:
+
+```
+set                mean   per-slot ranks
+Frigid Melody      0.994  [1, 25, 2, 5, 26]     <- correct, confirmed by the player
+Dawn of            0.716  [12, 41, 12, 35, 21]
+Crimson Lotus      0.667  [63, 7, 92, 21, 4]
+```
+
+A wrong set cannot win five independent pools of ~110 at once, which is why this works where per-slot
+does not. With the set known, assignment inside it is a 5x5 problem: greedy on the most confident pair
+**recovered 4 of 4 confirmed slots**, against 1 of 4 for per-slot top-1.
+
+**3. Confidence does not separate "in the set" from "not in it".** In that same run `feet` was
+CORRECT at 0.253 while `chest` was WRONG at 0.627. So the set is identifiable and the exact **piece
+count is not** — which is exactly the failure the player reported ("it said 2, I have 4"). The right
+behaviour is to name the set, name the slots that clear a margin, and refuse to state a count; see the
+gear-set instructions in `DerivedTargets`, which now forbid asserting one.
+
+**4. A simulation of the distortion ranked the descriptors WRONG, and that is worth remembering.**
+Synthesising queries by distorting the published art gave RGB 96.2% and dHash 62.3% top-1 — the right
+order by luck. But the same method also had to be thrown out mid-investigation, because a query built
+from the index's own source art makes colour a perfect cue that real cross-rendering does not provide.
+**Only real tiles with confirmed labels settle anything here.** The one existing ground truth (a single
+verified ring) was what allowed years of plausible-looking tuning; four labels changed the conclusion
+twice in an hour.
+
 ## Expanded character info — the definitive stat sheet
 
 The expanded view of the character window is **fully text-labelled** and is the authoritative
