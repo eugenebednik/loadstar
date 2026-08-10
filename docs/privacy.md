@@ -21,11 +21,21 @@ title, and a search for the game's name matched a **browser tab** with a build g
 from sending a browser window to a third party. Targeting has been explicit ever since.
 
 **Only after you agree.** The first capture is gated behind a consent dialog stating what is
-captured, where it is sent, and what is masked. Nothing is captured before you accept.
+captured and where it is sent. Nothing is captured before you accept.
 
-**With regions blacked out.** Privacy masks are painted onto the raw pixels *before* the image is
-encoded, so masked areas never exist in any file or transmission. Masking after encoding would be
-decorative. The app reports how many masks it applied on each capture, so you can confirm it worked.
+**And you see every image before it is sent.** Each screenshot appears in the ask window at full
+size, above the words "this exact image is what gets sent", with a delete button on it. Nothing
+leaves until you press Ask, and anything you delete first is never transmitted. This is the control
+that matters, because it is the one you can verify yourself.
+
+**On blacked-out regions.** Loadstar can paint masks onto the raw pixels before encoding, so masked
+areas would never exist in any file or transmission, and it reports how many it applied. For Throne
+and Liberty it currently applies **none**, and that is a deliberate reversal: a fixed mask over the
+bottom-left corner was removed in v0.20.0 because it was blacking out the character sheet's stat
+column — the exact numbers the advice is built from. The chat window it was meant to cover is
+draggable, resizable, and drawn as plain text over the game world with no panel behind it, so no
+fixed rectangle covers it reliably and there is no shape to detect. If you would rather your chat
+were not in frame, close or move it before capturing, or delete that screenshot in the ask window.
 
 **Never your game files.** Loadstar does not read, modify or parse game files, configuration, process
 memory or network traffic, and does not inject code or send input. That is a hard project constraint
@@ -47,7 +57,8 @@ selected in Settings**, authenticated with **your own API key**:
 | OpenAI | `api.openai.com` |
 | Google | `generativelanguage.googleapis.com` |
 
-Sent: the masked screenshot, text read from it, Loadstar's own instructions and game knowledge, and
+Sent: the screenshot as shown to you in the ask window, text read from it, Loadstar's own
+instructions and game knowledge, and
 the earlier turns of the current session so the assistant does not repeat itself.
 
 **Your relationship for that data is with the provider, not with us.** How they handle it — retention,
@@ -90,7 +101,8 @@ Loadstar is not directed at children, and collects nothing from anyone of any ag
   is sent to a provider.
 - **Delete everything Loadstar holds.** Delete `%LOCALAPPDATA%\Loadstar\`. That folder is the entire
   footprint — uninstalling removes the program, deleting that folder removes your data.
-- **Reduce what is visible.** Add a privacy mask over any region you would rather not send.
+- **Reduce what is visible.** Close or move any panel you would rather not send before you capture,
+  and delete individual screenshots in the ask window before pressing Ask.
 - **Ask a provider to delete their copy.** Data already sent is held under their policy, so that
   request goes to them, not to us.
 

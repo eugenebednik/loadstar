@@ -62,14 +62,38 @@ public static class ScreenRegions
     };
 
     /// <summary>
-    /// Areas to blank out before sending, wherever they land. The bottom-left corner carries
-    /// the party list and chat — other players' names and whatever they typed. None of it
-    /// improves the advice and all of it would leave the machine, so it is masked by default.
+    /// NONE, deliberately. This game declares no fixed privacy mask.
+    ///
+    /// <para><b>There used to be one</b> — the bottom-left 32% by 28%, aimed at the party list and chat,
+    /// because those carry other players' names and whatever they typed. It was removed on 2026-08-10 after
+    /// it was seen blacking out the character sheet's stat column in a real capture. That is the single
+    /// highest-value region in the game (see CLAUDE.md: item level per slot, gear score, the stat block), so
+    /// the mask was destroying exactly the data the product exists to read.</para>
+    ///
+    /// <para><b>It could not be fixed by moving it, because the chat window moves.</b> It is draggable and
+    /// resizable, so no fixed rectangle covers it on every player's screen — and this file already knew that:
+    /// <see cref="ForScreen"/> hands the full window to anything draggable for precisely this reason. The
+    /// mask was a fixed crop over a movable panel, which is the one thing the surrounding code says not to
+    /// do.</para>
+    ///
+    /// <para><b>Detecting it instead was considered and rejected.</b> The chat panel is translucent, so it
+    /// has no stable colour; it has no consistent border; and its content is ordinary text. Compare the
+    /// equipment slots, which are locatable only because they have a hard signature — bronze rings with a
+    /// measurable red-minus-blue margin and circular geometry. Chat has nothing equivalent, and a mask that
+    /// guesses wrong is worse than none: guess small and privacy is not protected, guess large and the stats
+    /// go dark again.</para>
+    ///
+    /// <para><b>What protects the player instead is stronger, and already shipped.</b> The ask dialog shows
+    /// every queued screenshot at the moment of sending, says outright that this exact image is what gets
+    /// sent, and puts a delete button on each one. That is informed consent over a preview rather than a
+    /// blanket rectangle the player never sees and cannot verify. Anyone who wants their chat out of frame
+    /// can also close or move it before capturing, which a mask cannot be relied on to do for them.</para>
+    ///
+    /// <para>The masking machinery in the capture pipeline stays: it is generic, it paints before encoding so
+    /// masked pixels never reach a file, and another game module may well need it. This game just declares
+    /// none.</para>
     /// </summary>
-    public static readonly IReadOnlyList<CaptureRegion> PrivacyMasks =
-    [
-        new CaptureRegion { Left = 0.0, Top = 0.72, Width = 0.32, Height = 0.28 },
-    ];
+    public static readonly IReadOnlyList<CaptureRegion> PrivacyMasks = [];
 
     /// <summary>
     /// Findings from the live client that the vision prompt and the identification pipeline

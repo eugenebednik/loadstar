@@ -4,9 +4,13 @@ namespace Loadstar.App;
 /// First-run consent. Capture stays off until this is accepted.
 ///
 /// <para>docs/anti-cheat-posture.md requires that the first-run flow "says plainly what gets captured
-/// and where it is sent". So this names the provider, states that images leave the machine, and says
-/// what is masked before they do — burying any of that would satisfy the letter of the rule and none
-/// of its purpose.</para>
+/// and where it is sent". So this names the provider and states that images leave the machine —
+/// burying either would satisfy the letter of the rule and none of its purpose.</para>
+///
+/// <para>It deliberately does not promise that regions are blacked out. This game applies no fixed
+/// privacy mask any more; see <c>ScreenRegions.PrivacyMasks</c> for why, and note that the ask window
+/// showing each image with a delete button is the stronger guarantee anyway, because the player can
+/// check it.</para>
 ///
 /// <para><see cref="CurrentVersion"/> is compared against the stored acceptance, so changing what is
 /// captured means bumping it and asking again rather than relying on consent given for something

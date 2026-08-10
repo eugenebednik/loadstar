@@ -1676,8 +1676,18 @@ Quietis's Demesne · Grayclaw Forest. **Unticked by default** on this character.
 
 **The currency bar was fully expanded and readable in the same capture** — nine values including
 Sollant at 169,661,552 — confirming the expanded bar is genuinely machine-readable, which the whole
-budgeting side of the product depends on. Privacy masking also verified: the bottom-left party/chat
-corner came back blacked out.
+budgeting side of the product depends on.
+
+> **The privacy mask that blacked out the bottom-left corner is gone, removed 2026-08-10.** It was
+> doing real damage: on a character-sheet capture it covered the stat column, which is the single
+> highest-value region in the game. It could not simply be moved, because the chat window it targeted
+> is draggable and resizable — and detection was measured and rejected. A full-resolution capture
+> shows chat is drawn as **plain text straight onto the game world**: no border, no background fill,
+> no anchor, so there is no shape to find. The only distinctive signal is the vivid green of player
+> names, which would cover names but not the white message text, and green is also uncommon-item
+> colour. Any *fixed* rectangle also fails on the character sheet regardless of who places it, since
+> chat is hidden behind that panel while the mask is not. The protection that replaces it is the ask
+> window: every queued image shown full size with a delete button, which the player can verify.
 
 **The Hourly tab was examined 2026-08-06** and turned out to be a second concurrent stream rather
 than another view of the same one — see the top of this section. Seven slots a day in Pacific time:

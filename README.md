@@ -6,6 +6,38 @@ with the resources you actually have.
 
 First supported game: **Throne and Liberty**.
 
+## What it looks like
+
+Real captures from a live session. The player's character name is blacked out; nothing else is edited.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**Press the hotkey, ask a question.** Up to four screens travel with one question. Every one is shown
+here before anything is sent, each with a delete button — so what leaves your machine is what you saw
+and approved. The hotkey queues another screen without closing this window.
+
+<img src="docs/screenshots/ask.png" alt="The ask window, showing two queued game screenshots with delete buttons, starter questions, and a box to type a question" width="100%">
+
+</td>
+<td width="50%" valign="top">
+
+**Get a ranked, priced answer.** It states which screens it read and what it found on each, then ranks
+actions by value for the cost — free moves first — and ends with what it could not see, so you know
+what to show it next.
+
+<img src="docs/screenshots/answer.png" alt="The answer window, listing the screens it read then three ranked actions with their costs in Sollant" width="100%">
+
+</td>
+</tr>
+</table>
+
+**Boss countdowns in the corner, without opening anything.** Draggable, and it can alert you a
+configurable number of minutes before each spawn.
+
+<img src="docs/screenshots/boss-timer.png" alt="A small overlay listing two field boss timers and a guild boss timer with countdowns" width="300">
+
 > [!IMPORTANT]
 > Loadstar never touches the game. It does not inject code, hook the renderer, read process
 > memory, or send input. It captures the screen the same way OBS does and draws its own

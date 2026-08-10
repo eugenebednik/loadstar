@@ -114,7 +114,10 @@ public sealed record DerivedTargets
             return;
         }
 
-        builder.AppendLine("### Gear sets in this build");
+        // "in this build" was ambiguous and got read as the player's own gear. It is the TARGET build's
+        // composition, and saying so is the difference between useful advice and a confident invention:
+        // a real answer told a player with four Frigid Melody pieces equipped to go and find a second one.
+        builder.AppendLine("### Gear sets in the TARGET build — these are the author's counts, NOT yours");
         builder.AppendLine();
 
         foreach (var set in Stats.Sets)
@@ -154,6 +157,17 @@ public sealed record DerivedTargets
             "A set sitting ONE piece short of a threshold is usually the best gear advice available, "
             + "and it is invisible from item level — a slot can look fine on level and still leave a "
             + "whole set bonus unclaimed. Prefer it over a bigger upgrade that costs more.");
+        builder.AppendLine();
+
+        // The counts above are the AUTHOR's. Nothing in a screenshot gives the player's own, and the model
+        // will otherwise fill the gap with a plausible number — the same failure as inventing an item name.
+        // Deliberately terse: measured headroom on this prompt is a few hundred tokens.
+        builder.AppendLine(
+            "**The player's OWN piece counts are unknown to you.** Set membership is not on the character "
+            + "sheet and icons cannot be named; `Frigid Melody Set (4/5)` appears only in an item tooltip. "
+            + "So never state or imply how many pieces they have — \"if you have a second piece\" asserts a "
+            + "count you cannot see. Ask them to hover a piece and capture the tooltip instead, and until "
+            + "then treat the set as a question, not a ranked step.");
         builder.AppendLine();
     }
 

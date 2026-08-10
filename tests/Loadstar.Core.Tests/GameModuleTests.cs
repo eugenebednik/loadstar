@@ -117,7 +117,12 @@ public sealed class GameModuleTests
 
         Assert.Equal(1.0, module.FullWindow.Width);
         Assert.Equal(1.0, module.FullWindow.Height);
-        Assert.NotEmpty(module.PrivacyMasks);
+        // EMPTY, and asserted rather than left unstated. This game declares no fixed mask because the chat
+        // panel it was meant to cover is draggable and resizable, and the fixed rectangle was black-boxing the
+        // character sheet's stat column instead — see ScreenRegions.PrivacyMasks. Asserting emptiness means
+        // re-adding a blanket mask breaks a test that says why it was removed, rather than silently
+        // reintroducing the bug.
+        Assert.Empty(module.PrivacyMasks);
 
         // Knowledge metadata, for the settings page.
         Assert.True(module.KnowledgeTokens > 1000);

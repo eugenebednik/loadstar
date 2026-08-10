@@ -44,7 +44,7 @@ internal sealed class RetakeCountdown : Form
         DoubleBuffered = true;
 
         // Top centre of the primary screen: out of the way of the character sheet, which the player is
-        // about to open, and nowhere near the bottom-left party/chat corner the privacy masks cover.
+        // about to open, and clear of the bottom-left corner where chat sits.
         var screen = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1920, 1080);
         Location = new Point(screen.X + ((screen.Width - ClientSize.Width) / 2), screen.Y + 80);
 
