@@ -96,6 +96,40 @@ internal sealed class HotkeyHost : Form
             return;
         }
 
+        // A BACKSTOP, NOT THE MECHANISM. Read the next paragraph before relying on this.
+        //
+        // The obvious theory is that this Form is the app's only top-level window, so an installer or Restart
+        // Manager closing the app by window would reach it here. THAT IS FALSE, and it was measured: the
+        // handle is forced with CreateHandle and the window is never shown, so WinForms parents it to a
+        // parking window. It is not top-level, EnumWindows does not return it, and posting WM_CLOSE to all
+        // eleven windows the process does own never entered this branch. The fix that actually works is
+        // TrayApplication's SystemEvents.SessionEnding subscription, which listens on the framework's own
+        // broadcast window.
+        //
+        // This stays because it costs nothing and covers the case the measurement cannot rule out: something
+        // addressing this handle directly. Do not delete it and do not treat it as the shutdown path.
+        if (m.Msg is NativeMethods.WM_CLOSE or NativeMethods.WM_ENDSESSION)
+        {
+            Core.Diagnostics.Log.Info($"Shutdown: window message 0x{m.Msg:x4} received; exiting.");
+
+            // Posted rather than called inline so this message returns first. Application.Exit disposes
+            // forms, and disposing the window currently dispatching would be pulling the floor out.
+            BeginInvoke(Application.Exit);
+
+            m.Result = IntPtr.Zero;
+
+            return;
+        }
+
+        // TRUE means "yes, I can shut down". A window that does not answer is treated as refusing, which is
+        // what makes an installer give up and prompt — so answer even though nothing is known to ask here.
+        if (m.Msg == NativeMethods.WM_QUERYENDSESSION)
+        {
+            m.Result = 1;
+
+            return;
+        }
+
         base.WndProc(ref m);
     }
 

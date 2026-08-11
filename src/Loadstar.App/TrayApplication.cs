@@ -170,6 +170,45 @@ internal sealed class TrayApplication : IDisposable
                 "Windows Graphics Capture needs Windows 10 version 2004 (build 19041) or newer.",
                 ToolTipIcon.Warning);
         }
+
+        // EXIT WHEN WINDOWS ASKS, which is what lets an upgrade install over a running copy.
+        //
+        // Reported from the field as "the installer is unable to automatically close Loadstar". The cause is
+        // not that the request was refused — it never arrived. Windows Installer closes an app through Restart
+        // Manager, which asks the TOP-LEVEL windows of the offending process. Loadstar's hotkey window is a
+        // Form whose handle is forced with CreateHandle and never shown, so WinForms parents it to a parking
+        // window; it is not top-level and EnumWindows does not return it. Verified by enumerating the
+        // process's windows and posting WM_CLOSE to every one of them: eleven windows, all WinForms
+        // internals, and the process survived.
+        //
+        // SystemEvents is the hook that does work, because it listens on the framework's own broadcast
+        // window, which IS top-level and does receive the session messages. This also makes a Windows
+        // shutdown or sign-out close the app cleanly rather than having it killed.
+        Microsoft.Win32.SystemEvents.SessionEnding += OnSessionEnding;
+    }
+
+    /// <summary>
+    /// Windows, an installer, or Restart Manager is shutting us down. Leave promptly and cleanly.
+    ///
+    /// <para>Not cancelled under any circumstance. Refusing is what produces "this application is preventing
+    /// shutdown", and there is nothing here worth blocking an upgrade or a sign-out for — settings are written
+    /// when a dialog is accepted, not at exit.</para>
+    /// </summary>
+    private void OnSessionEnding(object sender, Microsoft.Win32.SessionEndingEventArgs e)
+    {
+        Core.Diagnostics.Log.Info($"Shutdown: Windows is ending the session ({e.Reason}); exiting.");
+
+        // SystemEvents raises on its OWN dedicated thread, not the UI thread, so this cannot call
+        // Application.Exit directly — that walks the open forms and disposes them, and doing it off-thread
+        // is how a clean shutdown turns into a hang or a crash dialog on the way out.
+        if (_hotkeys.IsHandleCreated && !_hotkeys.IsDisposed)
+        {
+            _hotkeys.BeginInvoke(Application.Exit);
+        }
+        else
+        {
+            Application.Exit();
+        }
     }
 
     /// <summary>
@@ -1356,6 +1395,11 @@ internal sealed class TrayApplication : IDisposable
 
     public void Dispose()
     {
+        // SystemEvents keeps a STATIC handler list, so an attached instance is rooted for the process
+        // lifetime. Detaching matters less for a tray app that exits once, and matters a great deal in tests
+        // and in the --settings harness, where a second instance would fire into a disposed first one.
+        Microsoft.Win32.SystemEvents.SessionEnding -= OnSessionEnding;
+
         _tray.Visible = false;
         _tray.Dispose();
         _hotkeys.Dispose();

@@ -21,6 +21,20 @@ internal static class NativeMethods
 {
     internal const int WM_HOTKEY = 0x0312;
 
+    /// <summary>
+    /// The shutdown messages an installer or Windows Restart Manager uses to ask an app to close.
+    ///
+    /// <para>Constants only — no new P/Invoke, so nothing here widens the native surface the anti-cheat
+    /// posture test guards. Loadstar RECEIVES these; it never sends them, which is the distinction that
+    /// matters: <c>SendMessage</c> and <c>PostMessage</c> are on that test's denylist precisely because
+    /// sending synthetic messages to another process is what gets accounts flagged.</para>
+    /// </summary>
+    internal const int WM_CLOSE = 0x0010;
+
+    internal const int WM_QUERYENDSESSION = 0x0011;
+
+    internal const int WM_ENDSESSION = 0x0016;
+
     [Flags]
     internal enum HotkeyModifiers : uint
     {

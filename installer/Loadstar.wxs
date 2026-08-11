@@ -229,7 +229,48 @@
                  Sequence="execute"
                  Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
 
+    <!--
+      CLOSE IT BEFORE WINDOWS INSTALLER LOOKS, which is the only place a close can prevent the prompt.
+
+      Reported from the field as "the installer is unable to automatically close Loadstar if it detects it
+      running". Both halves of that are ordering, and a verbose log of a real install shows it plainly:
+
+        13:03:40  Action start: InstallValidate            <- files-in-use is DETECTED here
+        13:03:44  Note: 1: 2205 2:  3: FilesInUse
+        13:03:59  Wix4CloseApplicationsDeferred_X64         <- and only CLOSED fifteen seconds later
+
+      InstallValidate is sequence 1400 and the WixCloseApplications work is deferred, so it cannot run
+      before 1500 no matter how it is scheduled — by the time it closes anything, Windows Installer has
+      already decided the app is in use and, under full UI, has already put the "the following
+      applications should be closed" dialog in front of the player. Deferring to a reboot is the other
+      branch of that same decision. So closing had to move ahead of 1400, which means an IMMEDIATE action.
+
+      taskkill rather than a graceful request, and that is a deliberate trade. Loadstar's own windows are a
+      parking-window-parented message sink and a NotifyIcon, so there is nothing for WM_CLOSE to land on —
+      taskkill without /F sends exactly that and would do nothing. Terminating costs nothing here: settings
+      and the API key are written when a dialog is accepted, never at exit, so there is no unsaved state.
+
+      Unconditional on purpose. It helps an upgrade (files in use), an uninstall (RemoveFiles at 3500 is
+      also ahead of the deferred close, which is the same bug wearing a different hat), and costs a fresh
+      install one taskkill that reports nothing found. Return="ignore" is what makes that harmless.
+    -->
+    <CustomAction Id="CloseRunningLoadstar"
+                  Property="CloseRunningLoadstar"
+                  ExeCommand="/IM Loadstar.exe /F"
+                  Execute="immediate"
+                  Return="ignore" />
+
+    <!-- Type 50 takes the EXECUTABLE in the property and the ARGUMENTS in ExeCommand. Putting the whole
+         command line in the property fails with 1721, which is a debugging afternoon nobody needs twice. -->
+    <SetProperty Id="CloseRunningLoadstar"
+                 Value="[System64Folder]taskkill.exe"
+                 Before="CloseRunningLoadstar"
+                 Sequence="execute" />
+
     <InstallExecuteSequence>
+      <!-- Ahead of 1400. See the comment on the action for why nothing later can work. -->
+      <Custom Action="CloseRunningLoadstar" Before="InstallValidate" />
+
       <!--
         Before RemoveFiles, because the executable being invoked is one of the files about to be deleted.
         A deferred action is written into the installation script at its sequence position, so scheduling it
