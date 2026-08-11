@@ -129,6 +129,10 @@ internal static class IconProbe
         var index = new IconIndex { BuiltAt = DateTimeOffset.UtcNow };
         var hashes = new Dictionary<string, IconHash>(StringComparer.Ordinal);
         var colours = new Dictionary<string, ColourSignature>(StringComparer.Ordinal);
+
+        // The descriptor that replaced the hash for this job. Collected alongside rather than instead of, so
+        // the two can be compared on the same capture in one run.
+        var candidates = new List<GearCandidate>();
         var failures = 0;
 
         foreach (var group in byIcon)
@@ -167,11 +171,23 @@ internal static class IconProbe
 
                 // One entry per ITEM, so a shared icon legitimately produces several entries with the
                 // same hash — which the index must then report as ambiguous rather than picking one.
+                var signature = IconSignature.Compute(image);
+
                 foreach (var item in group)
                 {
                     index.Add(item.Name, hash, item.EquipmentType);
                     hashes[item.Id] = hash;
                     colours[item.Id] = colour;
+
+                    // setId where the catalogue has one (41% of armour), name prefix otherwise. Leaving the
+                    // rest ungrouped would exclude most of the catalogue from set inference.
+                    var setKey = !string.IsNullOrWhiteSpace(item.SetId) ? item.SetId : SetPrefix(item.Name);
+
+                    if (setKey is not null && item.EquipmentType is not null)
+                    {
+                        candidates.Add(new GearCandidate(
+                            item.Id, item.Name, item.EquipmentType, setKey, SetPrefix(item.Name), signature));
+                    }
                 }
             }
             catch (Exception ex)
@@ -194,8 +210,10 @@ internal static class IconProbe
 
         if (!string.IsNullOrWhiteSpace(capturePath))
         {
-            await MatchCaptureAsync(capturePath, index, hashes, colours, catalog);
+            await MatchCaptureAsync(capturePath, index, hashes, colours, catalog, candidates);
         }
+
+        WriteGearIndex(candidates);
 
         return 0;
     }
@@ -297,7 +315,8 @@ internal static class IconProbe
         IconIndex index,
         Dictionary<string, IconHash> hashes,
         Dictionary<string, ColourSignature> colours,
-        EquipmentCatalog catalog)
+        EquipmentCatalog catalog,
+        IReadOnlyList<GearCandidate> candidates)
     {
         if (!File.Exists(capturePath))
         {
@@ -406,6 +425,146 @@ internal static class IconProbe
             }
             Console.WriteLine($"            nearest: {string.Join(" | ", ranked)}");
         }
+
+        ReportSetIdentification(capture, located, slots, candidates);
+    }
+
+    /// <summary>
+    /// Writes the signature index the shipping app loads, so identification costs no downloads at runtime.
+    ///
+    /// <para><b>Why ship it rather than build it on the user's machine.</b> Building requires fetching about
+    /// 1,500 icons from questlog's CDN, which is minutes of first-run latency and a hard dependency on a
+    /// third party being up — against a project that treats being offline as the normal state. Quantised to
+    /// signed bytes the whole index is a few hundred kilobytes against a 62 MB installer, so there is no
+    /// reason not to carry it.</para>
+    ///
+    /// <para>Quantisation is safe here because each channel is already unit-length: values live in roughly
+    /// [-1, 1], so one byte per component costs about 0.4% of full scale, far below the margins the
+    /// identifier decides on.</para>
+    /// </summary>
+    private static void WriteGearIndex(IReadOnlyList<GearCandidate> candidates)
+    {
+        // Only what a character sheet actually holds. Weapons and artifacts are not identified this way.
+        var wanted = TlEquipmentLayout.Order
+            .SelectMany((_, i) => TlEquipmentLayout.CategoriesForIndex(i))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var rows = candidates
+            .Where(c => wanted.Contains(c.Category))
+            .GroupBy(c => c.ItemId, StringComparer.Ordinal)
+            .Select(g => g.First())
+            .OrderBy(c => c.ItemId, StringComparer.Ordinal)
+            .Select(c => new
+            {
+                id = c.ItemId,
+                name = c.Name,
+                category = c.Category,
+                setKey = c.SetKey,
+                setName = c.SetName,
+                signature = Convert.ToBase64String(Quantise(c.Signature)),
+            })
+            .ToList();
+
+        var path = Path.Combine(AppContext.BaseDirectory, "gear-index.json");
+
+        File.WriteAllText(path, System.Text.Json.JsonSerializer.Serialize(
+            new { builtAt = DateTimeOffset.UtcNow, grid = IconSignature.Grid, items = rows }));
+
+        Console.WriteLine();
+        Console.WriteLine($"Gear index: {rows.Count} items -> {path} "
+            + $"({new FileInfo(path).Length / 1024:n0} KB)");
+    }
+
+    private static byte[] Quantise(IconSignature signature)
+    {
+        var bytes = new byte[signature.Length];
+
+        for (var i = 0; i < bytes.Length; i++)
+        {
+            bytes[i] = (byte)(sbyte)Math.Clamp((int)Math.Round(signature.Values[i] * 127f), -127, 127);
+        }
+
+        return bytes;
+    }
+
+    /// <summary>Two words joined, which is how a set reads on screen when the catalogue has no setId for it.</summary>
+    private static string? SetPrefix(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return null;
+        }
+
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        return parts.Length > 2 ? string.Join(' ', parts.Take(2)) : name.Trim();
+    }
+
+    /// <summary>
+    /// The set-first result, which is the measurement that matters. Per-slot ranking above answers "what is
+    /// this one tile", which no single tile supports; this answers "what set explains all of them", which
+    /// several tiles together answer decisively.
+    /// </summary>
+    private static void ReportSetIdentification(
+        Bgra32Image capture,
+        IReadOnlyList<SlotRegion> located,
+        (string Slot, SlotRegion Region)[] slots,
+        IReadOnlyList<GearCandidate> candidates)
+    {
+        Console.WriteLine();
+        Console.WriteLine("SET-FIRST IDENTIFICATION");
+
+        if (slots.Length != TlEquipmentLayout.Order.Count)
+        {
+            Console.WriteLine($"  {slots.Length} tiles found, expected {TlEquipmentLayout.Order.Count} — "
+                + "slot names are unreliable, so this is skipped rather than guessed.");
+
+            return;
+        }
+
+        var observed = new List<SlotSignature>();
+
+        for (var i = 0; i < slots.Length; i++)
+        {
+            var name = TlEquipmentLayout.SlotNameForIndex(i);
+            var categories = TlEquipmentLayout.CategoriesForIndex(i);
+
+            // Armour only: accessories do not come in sets that span slots, so including them would score a
+            // set on evidence it cannot supply.
+            if (name is not "head" and not "chest" and not "hands" and not "legs" and not "feet" and not "cloak")
+            {
+                continue;
+            }
+
+            observed.Add(new SlotSignature(
+                name,
+                categories,
+                IconSignature.Compute(capture, slots[i].Region.Artwork)));
+        }
+
+        Console.WriteLine($"  {observed.Count} armour tiles, {candidates.Count} catalogue candidates");
+
+        var verdict = GearSetIdentifier.Identify(observed, candidates);
+
+        if (verdict is null)
+        {
+            Console.WriteLine("  no set explained the tiles clearly enough to name (correct answer when true)");
+
+            return;
+        }
+
+        Console.WriteLine($"  SET: {verdict.SetName}  mean {verdict.MeanSimilarity:0.000}"
+            + $"  runner-up {verdict.RunnerUpSimilarity:0.000}"
+            + $"  margin {verdict.MeanSimilarity - (verdict.RunnerUpSimilarity ?? 0):0.000}");
+
+        foreach (var slot in verdict.Slots.OrderBy(s => s.SlotName, StringComparer.Ordinal))
+        {
+            Console.WriteLine($"    {slot.SlotName,-6} {slot.ItemName ?? "(set has none)",-32} "
+                + $"{slot.Similarity:0.000} {(slot.Confident ? "confirmed" : "assigned")}");
+        }
+
+        Console.WriteLine("  piece count is NOT reported: similarity cannot separate set members from "
+            + "non-members. Ask for a tooltip.");
     }
 
     /// <summary>

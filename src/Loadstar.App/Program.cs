@@ -69,6 +69,52 @@ internal static class Program
             return;
         }
 
+        // --gear identifies equipment on one or more captures using ONLY the embedded index, so the shipped
+        // path is exercised: no catalogue fetch, no icon downloads, nothing but bytes inside the assembly.
+        // That is the configuration a user on a fresh install actually gets.
+        if (args.Contains("--gear", StringComparer.OrdinalIgnoreCase))
+        {
+            var store2 = new Core.Configuration.SettingsStore();
+            Core.Diagnostics.Log.Initialize(store2.Directory);
+
+            Console.WriteLine($"Embedded gear index: {Games.ThroneAndLiberty.TlGearIndex.All.Count} items.");
+
+            foreach (var path in args.Where(a => !a.StartsWith("--", StringComparison.Ordinal)))
+            {
+                try
+                {
+                    var image = Capture.Windows.ImageDecoder
+                        .DecodeAsync(File.ReadAllBytes(path)).GetAwaiter().GetResult();
+                    var verdict = Games.ThroneAndLiberty.TlGearIndex.Identify(image);
+
+                    Console.WriteLine();
+                    Console.WriteLine($"{Path.GetFileName(path)} ({image.Width}x{image.Height})");
+
+                    if (verdict is null)
+                    {
+                        Console.WriteLine("  no set identified (not a character sheet, or genuinely unclear)");
+
+                        continue;
+                    }
+
+                    Console.WriteLine($"  SET {verdict.SetName}  mean {verdict.MeanSimilarity:0.000}"
+                        + $"  runner-up {verdict.RunnerUpSimilarity:0.000}");
+
+                    foreach (var slot in verdict.Slots.OrderBy(x => x.SlotName, StringComparer.Ordinal))
+                    {
+                        Console.WriteLine($"    {slot.SlotName,-6} {slot.ItemName ?? "(none in set)",-32}"
+                            + $" {slot.Similarity:0.000} {(slot.Confident ? "confirmed" : "assigned")}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"  {Path.GetFileName(path)}: {ex.GetType().Name} {ex.Message}");
+                }
+            }
+
+            return;
+        }
+
         // --settings opens the dialog on its own, without the tray. Purely so the window can be
         // opened, inspected and screenshotted without hunting through a tray menu each time.
         if (args.Contains("--settings", StringComparer.OrdinalIgnoreCase))

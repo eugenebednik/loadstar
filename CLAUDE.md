@@ -278,7 +278,21 @@ count is not** — which is exactly the failure the player reported ("it said 2,
 behaviour is to name the set, name the slots that clear a margin, and refuse to state a count; see the
 gear-set instructions in `DerivedTargets`, which now forbid asserting one.
 
-**4. A simulation of the distortion ranked the descriptors WRONG, and that is worth remembering.**
+**4. It is wired in and confirmed end to end, on two loadouts, with no network.** The shipped path loads an
+embedded 944-item signature index (about 800 KB, quantised to signed bytes) so identification works on a
+fresh install offline. Run against three real captures with `--gear`:
+
+| capture | verdict | mean vs runner-up |
+| --- | --- | --- |
+| PvP Heals sheet | **Frigid Melody** | 1.121 vs 0.788 — matches the player's confirmation |
+| DPS sheet | **Punisher's Wings** | 1.461 vs 0.742 — a second, independent loadout |
+| open world | **nothing identified** | correct: no slot grid, so no false positive |
+
+That last row is the screen classifier, and it is free: `EquipmentSlotLocator` finds the thirteen-slot grid
+only on the character sheet, so "did we find thirteen tiles" IS the test for "is this the character sheet".
+No separate heuristic exists to get wrong.
+
+**5. A simulation of the distortion ranked the descriptors WRONG, and that is worth remembering.**
 Synthesising queries by distorting the published art gave RGB 96.2% and dHash 62.3% top-1 — the right
 order by luck. But the same method also had to be thrown out mid-investigation, because a query built
 from the index's own source art makes colour a perfect cue that real cross-rendering does not provide.

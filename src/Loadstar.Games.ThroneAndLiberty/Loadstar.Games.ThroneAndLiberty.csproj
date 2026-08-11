@@ -18,5 +18,10 @@
          they stay readable and reviewable as documents — they are the product's game knowledge, and
          a diff on them should be legible to someone who plays the game. -->
     <EmbeddedResource Include="Knowledge\*.md" />
+    <!-- The icon signature index, so equipment identification works on a fresh install with no network.
+         Building it needs ~1,500 icons from questlog's CDN; regenerate with the icon-probe switch, which writes
+         gear-index.json beside the executable, then commit the result here. See TlGearIndex. -->
+    <EmbeddedResource Include="gear-index.json"
+                      LogicalName="Loadstar.Games.ThroneAndLiberty.gear-index.json" />
   </ItemGroup>
 </Project>

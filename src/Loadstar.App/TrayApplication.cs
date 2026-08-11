@@ -777,6 +777,23 @@ internal sealed class TrayApplication : IDisposable
             + $"to {providerInfo.DisplayName} "
             + $"as {AiProviderFactory.ResolveModel(provider, settings.Ai.Model)}.");
 
+        // IDENTIFIED LOCALLY, before anything is sent. The whole point of the icon index is that naming
+        // gear is arithmetic rather than something the model guesses from a 40px picture — and it guessed
+        // wrong in the field, telling a player with four set pieces to go and find a second one.
+        //
+        // Every queued frame is tried because nothing has told us which is the character sheet. Finding the
+        // full thirteen-slot grid IS the test: no other screen has one, so detection doubles as
+        // classification and there is no separate heuristic to get wrong.
+        var gear = IdentifyGear(frames);
+
+        if (gear is not null)
+        {
+            Core.Diagnostics.Log.Info(
+                $"Gear: identified the {gear.SetName} set, mean {gear.MeanSimilarity:0.00} vs "
+                + $"{gear.RunnerUpSimilarity:0.00} runner-up, "
+                + $"{gear.Confirmed.Count()} of {gear.Slots.Count} slots independently confirmed.");
+        }
+
         using var client = AiProviderFactory.Create(provider, apiKey);
 
         AiResponse response;
@@ -799,7 +816,7 @@ internal sealed class TrayApplication : IDisposable
                     derived,
                     candidates,
                     catalog),
-                UserPrompt = BuildUserPrompt(question, allocated, frames.Count),
+                UserPrompt = BuildUserPrompt(question, allocated, frames.Count, gear),
                 // Every queued screen, oldest first, each labelled with its position so the model can refer
                 // to one of them. Without the labels a multi-image request is four anonymous pictures and
                 // "the second screenshot" means nothing.
@@ -901,8 +918,42 @@ internal sealed class TrayApplication : IDisposable
     /// it varies per request and the system prompt is the cached, byte-stable part — putting a number
     /// that changes into it would invalidate the cache on every question.
     /// </param>
+    /// <summary>
+    /// Runs local gear identification over the queued screens, returning the first verdict found.
+    ///
+    /// <para>Decoding a PNG per frame is a few milliseconds and happens once per question, so trying all of
+    /// them is cheaper than asking the player which screen is which.</para>
+    /// </summary>
+    private static GearVerdict? IdentifyGear(IReadOnlyList<CapturedFrame> frames)
+    {
+        foreach (var frame in frames)
+        {
+            try
+            {
+                var image = Capture.Windows.ImageDecoder.DecodeAsync(frame.Png).GetAwaiter().GetResult();
+                var verdict = TlGearIndex.Identify(image);
+
+                if (verdict is not null)
+                {
+                    return verdict;
+                }
+            }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or NotSupportedException)
+            {
+                // A frame that will not decode costs identification on that frame, nothing else. The answer
+                // still goes out; it just goes out without the gear section, which is a supported state.
+                Core.Diagnostics.Log.Warn($"Gear: could not identify from a frame ({ex.GetType().Name}).");
+            }
+        }
+
+        return null;
+    }
+
     private static string BuildUserPrompt(
-        string question, IReadOnlyDictionary<TlStat, int> allocated, int screens)
+        string question,
+        IReadOnlyDictionary<TlStat, int> allocated,
+        int screens,
+        GearVerdict? gear)
     {
         var spread = allocated.Count > 0
             ? string.Join(", ", allocated.Select(a => $"{a.Key} {a.Value}"))
@@ -919,10 +970,16 @@ internal sealed class TrayApplication : IDisposable
             : $"Here are {screens} screens the player captured, labelled in capture order. They are "
               + "probably DIFFERENT panels, not the same one twice. Read all of them.";
 
+        // Only when something was identified. An empty heading would invite the model to fill it in.
+        var identified = TlGearIndex.Describe(gear) is { } text
+            ? Environment.NewLine + Environment.NewLine + text
+            : string.Empty;
+
         return $"""
             {attached}
 
             {asked}
+            {identified}
 
             Identify which screen each one is; nobody has told you.
 
