@@ -30,11 +30,12 @@
       development, which reached 0.15.58 -> released v0.16.0 -> 0.17.x development, which reached 0.17.60
       -> released v0.18.0 -> 0.19.x development, which reached 0.19.61 -> released v0.20.0 -> 0.21.x
       development, which reached 0.21.62 -> released v0.22.0 -> 0.23.x development, which reached 0.23.63
-      -> released v0.24.0 -> 0.25.x development, which is this line.
+      -> released v0.24.0 -> 0.25.x development -> released v0.26.0 -> 0.27.x development, which is this
+      line.
       A tagged build ignores this value entirely (CI passes -p:Version from the tag), so the only job
       it has is to keep rolling builds ahead of the last release and clear of the next one.
     -->
-    <Version>0.25.0</Version>
+    <Version>0.27.0</Version>
   </PropertyGroup>
 
 </Project>
