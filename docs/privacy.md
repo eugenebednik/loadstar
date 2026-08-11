@@ -44,7 +44,7 @@ enforced by an automated test that fails the build — see
 
 ## What leaves your machine
 
-Two destinations. There are no others.
+Three destinations. There are no others.
 
 ### 1. The AI provider you chose
 
@@ -71,6 +71,24 @@ Loadstar fetches your target build and its reference catalogues from questlog.gg
 request carries the build identifier you pasted and a User-Agent identifying Loadstar. No account, no
 key, and nothing about your character beyond which public build you asked for. questlog.gg is an
 unaffiliated third party with its own privacy policy.
+
+### 3. GitHub, for the boss schedule and update checks
+
+Two plain HTTPS GETs of public files, carrying nothing but a User-Agent naming Loadstar and its
+version. No account, no key, nothing about you or your character.
+
+- **The boss schedule**, on startup, so a rotation change does not need a new release.
+- **The update check**, once on startup and whenever you ask from the tray menu. It fetches a small
+  file listing the newest version. If you decline the update, nothing further is requested.
+
+GitHub will see the request, and therefore your IP address, as it would for any download. **Turn the
+update check off** with "Tell me when a new version is out" in Settings; the boss schedule falls back
+to a copy bundled inside the app when it cannot be fetched.
+
+**Nothing is ever installed without you agreeing.** Loadstar cannot install silently even in
+principle: the installer needs administrator permission, so Windows asks you every time. What is
+downloaded is checked against a digest published with the release before it is run, and discarded if
+it does not match.
 
 ## What stays on your machine
 

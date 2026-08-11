@@ -107,6 +107,8 @@ internal sealed class SettingsWindow : ThemedForm
 
     private readonly ThemedCheckBox _startWithWindows = new() { Text = Strings.Get("settings.startWithWindows") };
 
+    private readonly ThemedCheckBox _checkUpdates = new() { Text = Strings.Get("settings.autoUpdate") };
+
     /// <summary>
     /// Autostart, read from and written to the Run key rather than settings.json.
     ///
@@ -457,6 +459,8 @@ internal sealed class SettingsWindow : ThemedForm
         Row(grid, string.Empty, _consent);
         Row(grid, string.Empty, _startWithWindows);
         Row(grid, string.Empty, Hint("settings.hint.startWithWindows"));
+        Row(grid, string.Empty, _checkUpdates);
+        Row(grid, string.Empty, Hint("settings.autoUpdateHint"));
         Row(grid, string.Empty, _status);
 
         page.Controls.Add(grid);
@@ -760,6 +764,7 @@ internal sealed class SettingsWindow : ThemedForm
         // From the REGISTRY, so an entry the user removed outside the app shows as off here. Disabled
         // outright when there is no process path to register, because a checkbox that cannot do anything
         // should not look like it can.
+        _checkUpdates.Checked = settings.CheckForUpdates;
         _startWithWindows.Checked = _startup.IsEnabled();
         _startWithWindows.Enabled = _startup.IsSupported || _startWithWindows.Checked;
 
@@ -933,6 +938,7 @@ internal sealed class SettingsWindow : ThemedForm
         {
             Language = language,
             CaptureConsentGiven = _consent.Checked,
+            CheckForUpdates = _checkUpdates.Checked,
             ConsentVersionAccepted = _consent.Checked ? ConsentPrompt.CurrentVersion : null,
             Game = settings.Game with
             {

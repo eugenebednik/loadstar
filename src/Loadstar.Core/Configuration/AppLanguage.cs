@@ -58,6 +58,16 @@ public static class AppLanguages
         _ => "en",
     };
 
+    /// <summary>
+    /// The code in an installer's filename — <c>Loadstar-&lt;version&gt;-x64-&lt;code&gt;.msi</c>.
+    ///
+    /// <para><b>Resolves <see cref="AppLanguage.System"/> first</b>, which is the whole reason this exists
+    /// rather than callers using <see cref="IsoCode"/> directly. That maps System to English, because its job
+    /// is matching an explicit choice against a culture. Here the question is which installer to download, and
+    /// somebody on System with a Russian OS should get the Russian one.</para>
+    /// </summary>
+    public static string InstallerCode(AppLanguage language) => IsoCode(Resolve(language));
+
     /// <summary>The language's own name, so the picker is readable to someone who needs it.</summary>
     public static string NativeName(AppLanguage language) => language switch
     {

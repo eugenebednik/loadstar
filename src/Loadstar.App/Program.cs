@@ -115,6 +115,49 @@ internal static class Program
             return;
         }
 
+        // --check-update runs the update check and prints what it decided, without any UI. A feature that
+        // talks to the network and then executes an installer needs a way to be exercised repeatedly; the
+        // alternative is waiting on a balloon and a dialog to find out whether a URL is right.
+        if (args.Contains("--check-update", StringComparer.OrdinalIgnoreCase))
+        {
+            var store3 = new Core.Configuration.SettingsStore();
+            Core.Diagnostics.Log.Initialize(store3.Directory);
+
+            var language = Core.Configuration.AppLanguages.InstallerCode(store3.Load().Language);
+
+            Console.WriteLine($"Running {UpdateService.CurrentVersion}, asking for '{language}'.");
+
+            var found = new UpdateService()
+                .CheckAsync(language, CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+
+            if (found is null)
+            {
+                Console.WriteLine("No update offered. Either up to date, or the check failed — see the log.");
+            }
+            else
+            {
+                Console.WriteLine($"Update {found.Version} available: {found.Installer.File} "
+                    + $"({found.Installer.Bytes / 1048576:n0} MB, sha256 {found.Installer.Sha256?[..16]}…)");
+
+                // Downloads only when asked twice, because this pulls 60 MB.
+                if (args.Contains("--download", StringComparer.OrdinalIgnoreCase))
+                {
+                    var path = new UpdateService()
+                        .DownloadAsync(found, CancellationToken.None)
+                        .GetAwaiter()
+                        .GetResult();
+
+                    Console.WriteLine(path is null
+                        ? "Download or verification FAILED; nothing was kept."
+                        : $"Downloaded and digest-verified: {path}");
+                }
+            }
+
+            return;
+        }
+
         // --settings opens the dialog on its own, without the tray. Purely so the window can be
         // opened, inspected and screenshotted without hunting through a tray menu each time.
         if (args.Contains("--settings", StringComparer.OrdinalIgnoreCase))

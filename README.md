@@ -82,6 +82,11 @@ No .NET install needed — the installer ships a self-contained build.
 **[Download the latest release](../../releases/latest/download/Loadstar-x64.msi)** and run it. That
 link always resolves to the newest stable version, so it stays correct as new ones ship.
 
+**It keeps itself current.** From 0.24.0 onward Loadstar checks for a newer release when it starts and
+offers it — one click, and it installs over the top keeping your settings and API key. It never installs
+anything on its own: Windows asks for permission every time, because the installer needs it. Turn the
+check off with "Tell me when a new version is out" in Settings, and it stays available from the tray menu.
+
 Installers are published per language — English, Russian, Ukrainian, Spanish, German, French,
 Japanese, Korean and Traditional Chinese. Pick `Loadstar-<version>-x64-<lang>.msi` from the
 [latest release](../../releases/latest); every version is kept under [Releases](../../releases).

@@ -289,9 +289,49 @@ jobs:
           merge-multiple: true
           path: artifacts
 
+      # THE UPDATE MANIFEST, and the digests are the point of it. The app fetches this from
+      # /releases/latest/download/latest.json, which is always whichever release GitHub calls latest, so
+      # there is no second place recording a version that could disagree with the release itself.
+      #
+      # Every installer it names carries a SHA-256, because the app EXECUTES what it downloads. TLS
+      # authenticates github.com, but a truncated download is an everyday event on a desktop and a
+      # half-written MSI is exactly what fails partway through modifying a machine.
+      - name: Write the update manifest
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          {
+            echo '{'
+            echo "  \"version\": \"$version\","
+            echo '  "installers": ['
+            first=1
+            for msi in artifacts/Loadstar-*-x64-*.msi; do
+              name=$(basename "$msi")
+              # Loadstar-<version>-x64-<lang>.msi — the language is the last field before the extension.
+              lang="${name##*-x64-}"
+              lang="${lang%.msi}"
+              sha=$(sha256sum "$msi" | cut -d' ' -f1)
+              bytes=$(stat -c%s "$msi")
+              [ $first -eq 0 ] && echo '    ,'
+              first=0
+              echo "    { \"language\": \"$lang\", \"file\": \"$name\", \"sha256\": \"$sha\", \"bytes\": $bytes }"
+            done
+            echo '  ]'
+            echo '}'
+          } > artifacts/latest.json
+
+          echo "--- latest.json ---"
+          cat artifacts/latest.json
+
+          # A manifest naming no installer would make every client's update check a silent no-op, which is
+          # indistinguishable from being up to date. Fail the release instead.
+          python3 -c "import json,sys; d=json.load(open('artifacts/latest.json')); assert d['installers'], 'no installers'; print(len(d['installers']), 'installers listed')"
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/*.msi
+          files: |
+            artifacts/*.msi
+            artifacts/latest.json
           generate_release_notes: true
           draft: false

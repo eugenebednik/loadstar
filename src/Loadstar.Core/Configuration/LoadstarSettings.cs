@@ -27,6 +27,21 @@ public sealed record LoadstarSettings
     public bool CaptureConsentGiven { get; init; }
 
     public string? ConsentVersionAccepted { get; init; }
+
+    /// <summary>
+    /// Whether to look for a newer release when Loadstar starts. On by default.
+    ///
+    /// <para><b>Checking is not installing.</b> The package is <c>perMachine</c>, so an install needs
+    /// elevation and therefore a prompt somebody has to accept — a background updater would mean a
+    /// permanently elevated service on the machine, which is a large thing to add for the sake of one click.
+    /// So this only ever notices and offers; nothing is installed unasked.</para>
+    ///
+    /// <para>Default on because a stale install of a tool whose advice depends on per-patch game knowledge is
+    /// actively worse than a current one, and because the app already contacts the network on startup for the
+    /// boss schedule — so this adds a request, not a new category of behaviour. It is one checkbox to turn
+    /// off, and turning it off leaves the manual check in the tray menu.</para>
+    /// </summary>
+    public bool CheckForUpdates { get; init; } = true;
 }
 
 public sealed record AiSettings

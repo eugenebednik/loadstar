@@ -110,6 +110,11 @@ internal sealed class TrayApplication : IDisposable
         _secrets = new SecretStore(_store.Directory);
         _capture = new WindowsGraphicsCaptureSource();
 
+        // Fire-and-forget, like the time sync below: somebody is opening a game, and nothing here is worth
+        // making them wait for. Silent when there is no update, when the check fails, or when the setting is
+        // off — see CheckForUpdatesAsync.
+        _ = CheckForUpdatesOnStartupAsync();
+
         // Every launch, as requested, and fire-and-forget: a countdown must never wait on a time
         // server. Until it lands, TimeSync falls through to the system clock, so the worst case is the
         // behaviour that existed before this — the first second or two of a session is uncorrected.
@@ -239,6 +244,106 @@ internal sealed class TrayApplication : IDisposable
         _bossTimer.Apply();
     }
 
+    /// <summary>
+    /// The startup check, which stays quiet unless there is something to say.
+    ///
+    /// <para>Delayed deliberately. Startup already fetches the boss schedule and contacts four time sources,
+    /// and the player is usually mid-launch; adding one more request to that burst buys nothing. Thirty
+    /// seconds later the app is idle and a balloon is not competing for attention.</para>
+    /// </summary>
+    private async Task CheckForUpdatesOnStartupAsync()
+    {
+        if (!_store.Load().CheckForUpdates)
+        {
+            return;
+        }
+
+        await Task.Delay(TimeSpan.FromSeconds(30));
+        await CheckForUpdatesAsync(announceWhenCurrent: false);
+    }
+
+    /// <summary>
+    /// Looks for a newer release and, if the player agrees, downloads and installs it.
+    ///
+    /// <para><paramref name="announceWhenCurrent"/> separates the two callers. Asked from the tray menu,
+    /// "you are up to date" is the answer to a question and must be shown. On startup it is noise, so
+    /// silence is the whole point.</para>
+    ///
+    /// <para>Every failure path is quiet on startup for the same reason: a tray tool cannot interrupt
+    /// somebody entering a game to report that GitHub was briefly unreachable.</para>
+    /// </summary>
+    private async Task CheckForUpdatesAsync(bool announceWhenCurrent)
+    {
+        var settings = _store.Load();
+        var service = new UpdateService();
+        var language = AppLanguages.InstallerCode(settings.Language);
+
+        var available = await service.CheckAsync(language, CancellationToken.None);
+
+        if (available is null)
+        {
+            if (announceWhenCurrent)
+            {
+                Modal.Show(
+                    string.Format(Strings.Get("update.none"), UpdateService.CurrentVersion),
+                    $"Loadstar — {Strings.Get("update.menu")}",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
+
+            return;
+        }
+
+        // Topmost, because a fullscreen game holds the foreground and an unowned dialog opens behind it —
+        // see Modal. An update prompt nobody can see is worse than no prompt.
+        var answer = Modal.Show(
+            string.Format(Strings.Get("update.available"), available.Version, UpdateService.CurrentVersion)
+            + Environment.NewLine + Environment.NewLine
+            + Strings.Get("update.install"),
+            $"Loadstar — {Strings.Get("update.title")}",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Information);
+
+        if (answer != DialogResult.Yes)
+        {
+            Core.Diagnostics.Log.Info($"Update: {available.Version} offered and declined.");
+
+            return;
+        }
+
+        ShowBalloon(
+            Strings.Get("update.title"),
+            string.Format(Strings.Get("update.downloading"), available.Version));
+
+        var installer = await service.DownloadAsync(available, CancellationToken.None);
+
+        if (installer is null)
+        {
+            // Covers both a failed download and a digest mismatch. The distinction is in the log; to the
+            // player the outcome is the same and the important half is that nothing was installed.
+            Modal.Show(
+                Strings.Get("update.verifyFailed"),
+                $"Loadstar — {Strings.Get("update.title")}",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+
+            return;
+        }
+
+        if (!UpdateService.LaunchInstaller(installer))
+        {
+            Modal.Show(
+                Strings.Get("update.launchFailed"),
+                $"Loadstar — {Strings.Get("update.title")}",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
+
+        // Deliberately no Application.Exit() here. The MSI closes this process itself as part of the
+        // upgrade, and quitting now would mean exiting before knowing whether the elevation prompt was
+        // accepted — leaving the player with no tray icon and no installer running.
+    }
+
     private ContextMenuStrip BuildMenu()
     {
         var menu = new ContextMenuStrip();
@@ -270,6 +375,11 @@ internal sealed class TrayApplication : IDisposable
             lockOverlay.Enabled = overlay.ShowBossCountdown;
         };
 
+        // Present whether or not the automatic check is on, so turning the notification off does not take
+        // away the ability to look.
+        var updates = new ToolStripMenuItem(Strings.Get("update.menu"));
+        updates.Click += async (_, _) => await CheckForUpdatesAsync(announceWhenCurrent: true);
+
         var settings = new ToolStripMenuItem(Strings.Get("menu.settings"));
         settings.Click += (_, _) => ShowSettings();
 
@@ -281,6 +391,7 @@ internal sealed class TrayApplication : IDisposable
         menu.Items.Add(countdown);
         menu.Items.Add(lockOverlay);
         menu.Items.Add(settings);
+        menu.Items.Add(updates);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(exit);
 
